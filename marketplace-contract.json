@@ -1,0 +1,261 @@
+{
+  "contractVersion": "1.0.0",
+  "description": "Shared application contract for the agent marketplace. x402 wire payloads and signatures must be handled by the official x402 v2 SDK, not hand-authored here.",
+  "conventions": {
+    "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+    "currency": "USDC",
+    "assetDecimals": 6,
+    "moneyRule": "priceUnits and budgetUnits are canonical integer strings. Convert to display USDC by dividing by 1000000; do not use floating-point values for budget or payment arithmetic.",
+    "timestamps": "ISO 8601 UTC date-time strings except fields explicitly named timestampMs.",
+    "replaceBeforeUse": "Replace all REPLACE_ME endpoint and wallet values with the deployed HTTPS URLs and real testnet addresses. Never store private keys here."
+  },
+  "environment": {
+    "network": "eip155:84532",
+    "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+    "facilitatorUrl": "https://x402.org/facilitator",
+    "rpcUrl": "https://sepolia.base.org",
+    "explorerTransactionUrlTemplate": "https://sepolia.basescan.org/tx/{txHash}",
+    "paymentScheme": "exact"
+  },
+  "sellerListingSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "SellerListing",
+    "type": "object",
+    "properties": {
+      "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+      "name": { "type": "string", "minLength": 1 },
+      "category": { "type": "string", "enum": ["scraping", "data", "inference"] },
+      "description": { "type": "string", "minLength": 1 },
+      "endpointUrl": { "type": "string", "format": "uri" },
+      "priceUnits": { "type": "string", "pattern": "^[1-9][0-9]*$" },
+      "network": { "type": "string", "const": "eip155:84532" },
+      "asset": { "type": "string", "const": "0x036CbD53842c5426634e7929541eC2318f3dCF7e" },
+      "payTo": { "type": "string", "pattern": "^0x[a-fA-F0-9]{40}$" },
+      "inputSchema": { "type": "object" },
+      "outputSchema": { "type": "object" },
+      "reputation": {
+        "type": "object",
+        "properties": {
+          "totalCalls": { "type": "integer", "minimum": 0 },
+          "successfulCalls": { "type": "integer", "minimum": 0 },
+          "successRatePercent": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+          "medianLatencyMs": { "type": ["number", "null"], "minimum": 0 }
+        },
+        "required": ["totalCalls", "successfulCalls", "successRatePercent", "medianLatencyMs"],
+        "additionalProperties": false
+      }
+    },
+    "required": ["id", "name", "category", "description", "endpointUrl", "priceUnits", "network", "asset", "payTo", "inputSchema", "outputSchema", "reputation"],
+    "additionalProperties": false
+  },
+  "sellers": [
+    {
+      "id": "shelf-scraper",
+      "name": "Shelf Scraper Agent",
+      "category": "scraping",
+      "description": "Scrapes one Books to Scrape catalogue page, follows book detail links, and returns title, GBP price, star rating, and description text.",
+      "endpointUrl": "https://REPLACE_ME/sellers/shelf-scraper/scrape",
+      "priceUnits": "5000",
+      "network": "eip155:84532",
+      "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+      "payTo": "REPLACE_ME_WITH_40_HEX_TESTNET_ADDRESS",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": { "page": { "type": "integer", "minimum": 1, "maximum": 50 } },
+        "required": ["page"],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "minimum": 1 },
+          "books": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string", "minLength": 1 },
+                "title": { "type": "string", "minLength": 1 },
+                "priceGbp": { "type": "number", "minimum": 0 },
+                "stars": { "type": "integer", "minimum": 1, "maximum": 5 },
+                "description": { "type": "string" }
+              },
+              "required": ["id", "title", "priceGbp", "stars", "description"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["page", "books"],
+        "additionalProperties": false
+      },
+      "reputation": { "totalCalls": 0, "successfulCalls": 0, "successRatePercent": null, "medianLatencyMs": null }
+    },
+    {
+      "id": "fx-rates",
+      "name": "FX Rates Agent",
+      "category": "data",
+      "description": "Returns a sourced GBP-to-INR exchange rate and the time it was observed.",
+      "endpointUrl": "https://REPLACE_ME/sellers/fx-rates/rate",
+      "priceUnits": "1000",
+      "network": "eip155:84532",
+      "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+      "payTo": "REPLACE_ME_WITH_40_HEX_TESTNET_ADDRESS",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "from": { "type": "string", "const": "GBP" },
+          "to": { "type": "string", "const": "INR" }
+        },
+        "required": ["from", "to"],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "from": { "type": "string", "const": "GBP" },
+          "to": { "type": "string", "const": "INR" },
+          "rate": { "type": "number", "exclusiveMinimum": 0 },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "source": { "type": "string", "minLength": 1 }
+        },
+        "required": ["from", "to", "rate", "timestamp", "source"],
+        "additionalProperties": false
+      },
+      "reputation": { "totalCalls": 0, "successfulCalls": 0, "successRatePercent": null, "medianLatencyMs": null }
+    },
+    {
+      "id": "hindi-summary",
+      "name": "Hindi Summary Agent",
+      "category": "inference",
+      "description": "Produces concise Hindi summaries for one or two supplied book descriptions per request.",
+      "endpointUrl": "https://REPLACE_ME/sellers/hindi-summary/summarise",
+      "priceUnits": "10000",
+      "network": "eip155:84532",
+      "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+      "payTo": "REPLACE_ME_WITH_40_HEX_TESTNET_ADDRESS",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string", "minLength": 1 },
+                "text": { "type": "string", "minLength": 1 }
+              },
+              "required": ["id", "text"],
+              "additionalProperties": false
+            },
+            "minItems": 1,
+            "maxItems": 2
+          }
+        },
+        "required": ["items"],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "summaries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string", "minLength": 1 },
+                "summary": { "type": "string", "minLength": 1 }
+              },
+              "required": ["id", "summary"],
+              "additionalProperties": false
+            },
+            "minItems": 1,
+            "maxItems": 2
+          }
+        },
+        "required": ["summaries"],
+        "additionalProperties": false
+      },
+      "reputation": { "totalCalls": 0, "successfulCalls": 0, "successRatePercent": null, "medianLatencyMs": null }
+    }
+  ],
+  "buyerTaskSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "BuyerTask",
+    "type": "object",
+    "properties": {
+      "taskId": { "type": "string", "minLength": 1 },
+      "prompt": { "type": "string", "minLength": 1 },
+      "budgetUnits": { "type": "string", "pattern": "^[1-9][0-9]*$" },
+      "network": { "type": "string", "const": "eip155:84532" },
+      "maxConcurrency": { "type": "integer", "minimum": 1, "maximum": 5 }
+    },
+    "required": ["taskId", "prompt", "budgetUnits", "network", "maxConcurrency"],
+    "additionalProperties": false
+  },
+  "exampleBuyerTask": {
+    "taskId": "books-five-star-hindi",
+    "prompt": "From pages 1 to 4 of books.toscrape.com, find the three cheapest 5-star books, give their prices in rupees, and summarize each description in Hindi.",
+    "budgetUnits": "50000",
+    "network": "eip155:84532",
+    "maxConcurrency": 3
+  },
+  "ledgerRecordSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "LedgerRecord",
+    "type": "object",
+    "properties": {
+      "id": { "type": "string", "minLength": 1 },
+      "timestamp": { "type": "string", "format": "date-time" },
+      "buyerAddress": { "type": "string", "pattern": "^0x[a-fA-F0-9]{40}$" },
+      "sellerId": { "type": "string", "minLength": 1 },
+      "serviceName": { "type": "string", "minLength": 1 },
+      "category": { "type": "string", "enum": ["scraping", "data", "inference"] },
+      "listedPriceUnits": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+      "askedPriceUnits": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+      "amountPaidUnits": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+      "txHash": { "type": ["string", "null"], "pattern": "^0x[a-fA-F0-9]{64}$" },
+      "explorerUrl": { "type": ["string", "null"], "format": "uri" },
+      "status": { "type": "string", "enum": ["paid", "paid, output rejected", "refused", "failed and not charged"] },
+      "latencyMs": { "type": "integer", "minimum": 0 },
+      "reason": { "type": "string" }
+    },
+    "required": ["id", "timestamp", "buyerAddress", "sellerId", "serviceName", "category", "listedPriceUnits", "askedPriceUnits", "amountPaidUnits", "txHash", "explorerUrl", "status", "latencyMs"],
+    "additionalProperties": false,
+    "statusInvariants": {
+      "paid": "amountPaidUnits > 0 and txHash/explorerUrl identify the real settlement.",
+      "paid, output rejected": "amountPaidUnits > 0 and txHash/explorerUrl identify the real settlement.",
+      "refused": "amountPaidUnits is 0 and txHash/explorerUrl are null.",
+      "failed and not charged": "amountPaidUnits is 0 and txHash/explorerUrl are null."
+    }
+  },
+  "paymentChecks": {
+    "protocol": "Use the official x402 v2 SDK for payment headers, payloads, signing, verification, and settlement. Do not hand-build or modify signed payloads.",
+    "beforeSigning": [
+      "The selected scheme is exact.",
+      "The asked amount is a non-negative integer string and does not exceed the registry priceUnits.",
+      "The asked network matches the seller listing and configured network.",
+      "The asked asset matches the seller listing and configured asset.",
+      "The asked payTo address matches the seller listing payTo address, case-insensitively."
+    ],
+    "budgetReservationRule": "Atomically require spentUnits + reservedUnits + callPriceUnits <= budgetUnits before starting a call. On settlement, move the reservation to spent; on confirmed failure without settlement, release it.",
+    "replayRule": "Consume each signed authorization at most once. Use atomic persistent/shared idempotency and replay state; an in-memory set alone is insufficient."
+  },
+  "exampleTaskCostPlan": {
+    "scrapingCalls": 4,
+    "scrapingPriceUnitsEach": "5000",
+    "dataCalls": 1,
+    "dataPriceUnitsEach": "1000",
+    "inferenceCalls": 2,
+    "inferencePriceUnitsEach": "10000",
+    "estimatedTotalUnits": "41000",
+    "budgetUnits": "50000",
+    "remainingUnits": "9000",
+    "note": "Estimate only; calculate actual spend using live listings and accepted quotes."
+  }
+}
