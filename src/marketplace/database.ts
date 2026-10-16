@@ -11,7 +11,9 @@ database.exec(`
     id TEXT PRIMARY KEY,
     listing_json TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    is_listed INTEGER NOT NULL DEFAULT 1,
+    registration_source TEXT NOT NULL DEFAULT 'website'
   );
 
   CREATE TABLE IF NOT EXISTS ledger (
@@ -26,16 +28,34 @@ database.exec(`
   CREATE INDEX IF NOT EXISTS ledger_seller_id_idx ON ledger(seller_id);
 `);
 
+const sellerColumns = database.pragma("table_info(sellers)") as Array<{ name: string }>;
+if (!sellerColumns.some((column) => column.name === "is_listed")) {
+  database.exec("ALTER TABLE sellers ADD COLUMN is_listed INTEGER NOT NULL DEFAULT 1");
+}
+if (!sellerColumns.some((column) => column.name === "registration_source")) {
+  database.exec("ALTER TABLE sellers ADD COLUMN registration_source TEXT NOT NULL DEFAULT 'website'");
+  database.exec(`
+    UPDATE sellers
+    SET registration_source = 'legacy_seed'
+    WHERE id IN ('movie-scraper', 'movie-facts', 'movie-summary')
+      AND json_extract(listing_json, '$.priceUnits') = '0'
+      AND json_extract(listing_json, '$.paymentRequired') = 0
+      AND lower(json_extract(listing_json, '$.payTo')) = '0x0000000000000000000000000000000000000001'
+  `);
+}
+
 const findSeller = database.prepare(
-  "SELECT listing_json FROM sellers WHERE id = ?"
+  "SELECT listing_json FROM sellers WHERE id = ? AND is_listed = 1"
 );
 
 const insertSeller = database.prepare(`
-  INSERT INTO sellers (id, listing_json, created_at, updated_at)
-  VALUES (@id, @listingJson, @now, @now)
+  INSERT INTO sellers (id, listing_json, created_at, updated_at, is_listed, registration_source)
+  VALUES (@id, @listingJson, @now, @now, 1, 'website')
   ON CONFLICT(id) DO UPDATE SET
     listing_json = excluded.listing_json,
-    updated_at = excluded.updated_at
+    updated_at = excluded.updated_at,
+    is_listed = 1,
+    registration_source = 'website'
 `);
 
 const insertLedger = database.prepare(`
@@ -65,12 +85,40 @@ export function getSeller(id: string): SellerListing | undefined {
 
 export function listSellers(): SellerListing[] {
   const rows = database
-    .prepare("SELECT listing_json FROM sellers")
+    .prepare("SELECT listing_json FROM sellers WHERE is_listed = 1")
     .all() as Array<{ listing_json: string }>;
 
   return rows
     .map((row) => JSON.parse(row.listing_json) as SellerListing)
     .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+export function hideAutoSeededFreeListings(): number {
+  const seededIds = new Set(["movie-scraper", "movie-facts", "movie-summary"]);
+  const rows = database.prepare("SELECT id, listing_json, is_listed, registration_source FROM sellers").all() as Array<{
+    id: string;
+    listing_json: string;
+    is_listed: number;
+    registration_source: string;
+  }>;
+  const removeIds = rows.flatMap((row) => {
+    if (!row.is_listed || row.registration_source !== "legacy_seed" || !seededIds.has(row.id)) return [];
+    try {
+      const listing = JSON.parse(row.listing_json) as Partial<SellerListing>;
+      return listing.priceUnits === "0" &&
+        listing.paymentRequired === false &&
+        listing.payTo?.toLowerCase() === "0x0000000000000000000000000000000000000001"
+        ? [row.id]
+        : [];
+    } catch {
+      return [];
+    }
+  });
+  const hideTransaction = database.transaction((ids: string[]) => {
+    for (const id of ids) database.prepare("UPDATE sellers SET is_listed = 0 WHERE id = ?").run(id);
+  });
+  hideTransaction(removeIds);
+  return removeIds.length;
 }
 
 export function calculateReputation(sellerId: string): Reputation {

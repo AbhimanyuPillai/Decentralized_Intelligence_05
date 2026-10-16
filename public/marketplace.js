@@ -6,6 +6,14 @@ const servicesMessage = document.querySelector("#services-message");
 const ledgerRows = document.querySelector("#ledger-rows");
 const ledgerMessage = document.querySelector("#ledger-message");
 const registerMessage = document.querySelector("#register-message");
+const sellerForm = document.querySelector("#seller-form");
+const sellerPriceField = document.querySelector("#price-field");
+const sellerWalletField = document.querySelector("#wallet-field");
+const sellerPriceInput = sellerForm.elements.namedItem("priceUsdc");
+const sellerWalletInput = sellerForm.elements.namedItem("payTo");
+let paymentsEnabled = false;
+let registrationConfigLoaded = false;
+const freeTestPayTo = "0x0000000000000000000000000000000000000001";
 
 function showMessage(element, text, kind = "") {
   element.textContent = text;
@@ -76,10 +84,11 @@ function makeServiceCard(seller) {
   addText(titleGroup, "h3", "", seller.name);
   addText(titleGroup, "span", "category-tag", seller.category);
   top.append(titleGroup);
-  addText(top, "span", "price", `${unitsToUsdc(seller.priceUnits)} USDC`);
+  addText(top, "span", "price", seller.paymentRequired === false ? "Free (test mode)" : `${unitsToUsdc(seller.priceUnits)} USDC`);
   card.append(top);
 
   addText(card, "p", "service-description", seller.description);
+  if (seller.ready === false) addText(card, "p", "message error", "Configuration required before this service can accept requests.");
   const meta = document.createElement("div");
   meta.className = "service-meta";
   const reputation = seller.reputation;
@@ -186,8 +195,12 @@ document.querySelectorAll("[data-tab]").forEach((button) => {
   button.addEventListener("click", () => showTab(button.dataset.tab));
 });
 
-document.querySelector("#seller-form").addEventListener("submit", async (event) => {
+sellerForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (!registrationConfigLoaded) {
+    showMessage(registerMessage, "Marketplace registration settings have not loaded yet. Refresh the page and try again.", "error");
+    return;
+  }
   const form = event.currentTarget;
   const values = new FormData(form);
 
@@ -198,25 +211,52 @@ document.querySelector("#seller-form").addEventListener("submit", async (event) 
       category: String(values.get("category")),
       description: String(values.get("description")).trim(),
       endpointUrl: String(values.get("endpointUrl")).trim(),
-      priceUnits: usdcToUnits(String(values.get("priceUsdc"))),
+      priceUnits: paymentsEnabled ? usdcToUnits(String(values.get("priceUsdc"))) : "0",
       network: defaultNetwork,
       asset: defaultAsset,
-      payTo: String(values.get("payTo")).trim(),
+      payTo: paymentsEnabled ? String(values.get("payTo")).trim() : freeTestPayTo,
       inputSchema: JSON.parse(String(values.get("inputSchema"))),
       outputSchema: JSON.parse(String(values.get("outputSchema")))
     };
 
-    await requestJson("/api/registry", {
+    const registered = await requestJson("/api/registry", {
       method: "POST",
       body: JSON.stringify(listing)
     });
     form.reset();
-    showMessage(registerMessage, "Service registered.", "success");
+    updateRegistrationFields();
+    showMessage(registerMessage, registered.ready === false
+      ? "Service registered, but it needs configuration before it can accept requests."
+      : "Service registered and added to Browse services.", registered.ready === false ? "error" : "success");
     await loadServices();
   } catch (error) {
     showMessage(registerMessage, error.message, "error");
   }
 });
+
+function updateRegistrationFields() {
+  sellerPriceInput.readOnly = !paymentsEnabled;
+  sellerPriceInput.value = paymentsEnabled ? "" : "0";
+  sellerPriceInput.placeholder = paymentsEnabled ? "0.005" : "Free test mode";
+  sellerPriceField.classList.toggle("field-disabled", !paymentsEnabled);
+  sellerWalletField.hidden = !paymentsEnabled;
+  sellerWalletInput.required = paymentsEnabled;
+  document.querySelector("#registration-help").textContent = paymentsEnabled
+    ? "Paid mode is enabled. Use an HTTPS service URL, a positive price, and a Base Sepolia receiving wallet."
+    : "Free test mode is enabled. Use a local URL such as http://localhost:4000/sellers/movie-scraper/scrape; no wallet is needed.";
+}
+
+async function loadRegistrationConfig() {
+  try {
+    const config = await requestJson("/api/config");
+    paymentsEnabled = config.paymentsEnabled === true;
+    registrationConfigLoaded = true;
+    updateRegistrationFields();
+  } catch (error) {
+    sellerForm.querySelector("button[type=submit]").disabled = true;
+    showMessage(registerMessage, `Could not load registration settings: ${error.message}`, "error");
+  }
+}
 
 document.querySelector('[name="inputSchema"]').value = JSON.stringify({
   type: "object",
@@ -233,3 +273,4 @@ document.querySelector('[name="outputSchema"]').value = JSON.stringify({
 
 loadServices();
 loadLedger();
+loadRegistrationConfig();

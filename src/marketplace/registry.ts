@@ -1,6 +1,7 @@
 import { Ajv2020 } from "ajv/dist/2020.js";
 import contract from "../../marketplace-contract.json" with { type: "json" };
 import type { SellerListing, SellerRegistration } from "../types.js";
+import { movieSummaryReady } from "../sellers/movie-summary/service.js";
 import {
   calculateReputation,
   getSeller,
@@ -12,24 +13,20 @@ const ajv = new Ajv2020({ allErrors: true, strict: false });
 
 // Reputation is calculated from call records, so it is never trusted from a registration request.
 const listingSchema = structuredClone(contract.sellerListingSchema);
+const listingProperties = listingSchema.properties as Record<string, { pattern?: string; type?: string }>;
+const priceSchema = listingProperties.priceUnits;
+if (priceSchema) priceSchema.pattern = "^(0|[1-9][0-9]*)$";
+// Keep the shared contract JSON unchanged; these are runtime marketplace fields.
+listingProperties.paymentRequired = { type: "boolean" };
+listingProperties.ready = { type: "boolean" };
 const validateListing = ajv.compile(listingSchema);
 
 function withCurrentReputation(listing: SellerListing): SellerListing {
-  return { ...listing, reputation: calculateReputation(listing.id) };
-}
-
-export function seedListingsFromContract(): void {
-  for (const listing of contract.sellers as SellerListing[]) {
-    const hasPlaceholders =
-      listing.endpointUrl.includes("REPLACE_ME") ||
-      listing.payTo.includes("REPLACE_ME");
-
-    // Don't publish sample entries with placeholder URLs or wallet addresses.
-    if (hasPlaceholders) continue;
-
-    const readyListing = withCurrentReputation(listing);
-    if (validateListing(readyListing)) saveSeller(readyListing);
-  }
+  return {
+    ...listing,
+    ...(listing.id === "movie-summary" ? { ready: movieSummaryReady() } : {}),
+    reputation: calculateReputation(listing.id)
+  };
 }
 
 export function registerSeller(input: SellerRegistration): SellerListing {
@@ -39,12 +36,29 @@ export function registerSeller(input: SellerRegistration): SellerListing {
   } catch {
     throw new Error("endpointUrl must be a valid absolute URL.");
   }
-  if (endpoint.protocol !== "https:") {
-    throw new Error("endpointUrl must use HTTPS.");
+  const paymentsEnabled = process.env.SELLER_PAYMENTS_ENABLED === "true";
+  const localHttp = endpoint.protocol === "http:" && ["localhost", "127.0.0.1", "::1", "[::1]"].includes(endpoint.hostname);
+  if (endpoint.protocol !== "https:" && !( !paymentsEnabled && localHttp)) {
+    throw new Error(paymentsEnabled
+      ? "Paid seller endpoints must use HTTPS."
+      : "Free test endpoints must use HTTPS or localhost HTTP.");
+  }
+
+  const priceUnits = paymentsEnabled ? input.priceUnits : "0";
+  if (!/^(0|[1-9][0-9]*)$/.test(priceUnits) || (paymentsEnabled && priceUnits === "0")) {
+    throw new Error("Paid listings require a positive integer price in atomic USDC units.");
+  }
+  const payTo = paymentsEnabled ? input.payTo : "0x0000000000000000000000000000000000000001";
+  if (paymentsEnabled && (!/^0x[a-fA-F0-9]{40}$/.test(payTo) || /^0x0{40}$/i.test(payTo))) {
+    throw new Error("Paid listings require a valid non-zero seller wallet address.");
   }
 
   const listing = {
     ...input,
+    priceUnits,
+    payTo,
+    paymentRequired: paymentsEnabled,
+    ready: input.id === "movie-summary" ? movieSummaryReady() : true,
     reputation: calculateReputation(input.id)
   } as SellerListing;
 

@@ -44,6 +44,8 @@ input:focus, select:focus, textarea:focus { outline: 3px solid #dce5ff; border-c
 .message { min-height: 20px; color: var(--muted); font-size: 13px; }
 .message.error { color: #b42318; }
 .message.success { color: #067647; }
+.field-disabled { opacity: 0.72; }
+#wallet-field[hidden] { display: none; }
 .service-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 12px; }
 .service-card { display: flex; flex-direction: column; gap: 12px; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
 .card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }

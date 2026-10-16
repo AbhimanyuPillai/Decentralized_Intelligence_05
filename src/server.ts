@@ -1,13 +1,16 @@
+import "dotenv/config";
 import express from "express";
 import { createServer } from "node:https";
 import path from "node:path";
-import { listLedgerRecords, saveLedgerRecord } from "./marketplace/database.js";
+import { mountMovieScraper } from "./sellers/movie-scraper/routes.js";
+import { mountMovieFacts } from "./sellers/movie-facts/routes.js";
+import { mountMovieSummary } from "./sellers/movie-summary/routes.js";
+import { hideAutoSeededFreeListings, listLedgerRecords, saveLedgerRecord } from "./marketplace/database.js";
 import { parseLedgerRecord } from "./marketplace/ledger.js";
 import {
   findSeller,
   registerSeller,
-  searchSellers,
-  seedListingsFromContract
+  searchSellers
 } from "./marketplace/registry.js";
 import type { SellerRegistration } from "./types.js";
 import { loadLocalEnvironment, readLocalTlsFiles } from "./config.js";
@@ -19,7 +22,9 @@ const port = Number(process.env.MARKETPLACE_PORT ?? process.env.PORT ?? 3000);
 const buyerOrigin = process.env.BUYER_ORIGIN ?? "https://localhost:3001";
 
 app.use(express.json({ limit: "256kb" }));
-app.use(express.static(path.join(process.cwd(), "public")));
+mountMovieScraper(app);
+mountMovieFacts(app);
+mountMovieSummary(app);
 app.use((request, response, next) => {
   if (request.headers.origin === buyerOrigin && request.path.startsWith("/api/registry")) {
     response.setHeader("Access-Control-Allow-Origin", buyerOrigin);
@@ -37,7 +42,15 @@ app.use((request, response, next) => {
   }
   next();
 });
-seedListingsFromContract();
+const hiddenAutoSeededListings = hideAutoSeededFreeListings();
+if (hiddenAutoSeededListings > 0) {
+  console.info(`Unlisted ${hiddenAutoSeededListings} automatic free-test seller listing(s).`);
+}
+
+app.get("/api/config", (_request, response) => {
+  response.json({ paymentsEnabled: process.env.SELLER_PAYMENTS_ENABLED === "true" });
+});
+app.use(express.static(path.join(process.cwd(), "public")));
 
 app.get("/health", (_request, response) => {
   response.json({ status: "ok", service: "marketplace" });
@@ -112,6 +125,6 @@ app.get("/api/ledger", (request, response) => {
   response.json(listLedgerRecords(limit));
 });
 
-createServer(readLocalTlsFiles(), app).listen(port, "127.0.0.1", () => {
+createServer(readLocalTlsFiles(), app).listen(port, "0.0.0.0", () => {
   console.log(`Marketplace HTTPS listening on https://localhost:${port}`);
 });

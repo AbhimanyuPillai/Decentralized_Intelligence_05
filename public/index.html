@@ -61,7 +61,7 @@
             <h2>List a service</h2>
           </div>
         </div>
-        <p class="section-copy">Describe the service and its JSON inputs and outputs. The Marketplace calculates reputation from recorded calls.</p>
+        <p class="section-copy" id="registration-help">Register a service here. It will appear in Browse services after submission. The Marketplace calculates reputation from recorded calls.</p>
 
         <form id="seller-form" class="form-grid">
           <label>Service ID<input name="id" required placeholder="e.g. book-scraper" pattern="[a-z0-9][a-z0-9-]*" /></label>
@@ -73,9 +73,14 @@
               <option value="inference">Inference</option>
             </select>
           </label>
-          <label>Price per request (USDC)<input name="priceUsdc" required inputmode="decimal" placeholder="0.005" /></label>
-          <label class="wide">Service URL<input name="endpointUrl" required type="url" placeholder="https://your-service.example/api" /></label>
-          <label>Seller wallet address<input name="payTo" required placeholder="0x…" pattern="0x[a-fA-F0-9]{40}" /></label>
+          <label id="price-field">Price per request (USDC)<input name="priceUsdc" required inputmode="decimal" placeholder="0.005" /></label>
+          <label class="wide">Service URL<input name="endpointUrl" required type="url" list="local-service-endpoints" placeholder="http://localhost:4000/sellers/movie-scraper/scrape" /></label>
+          <datalist id="local-service-endpoints">
+            <option value="http://localhost:4000/sellers/movie-scraper/scrape"></option>
+            <option value="http://localhost:4000/sellers/movie-facts/lookup"></option>
+            <option value="http://localhost:4000/sellers/movie-summary/summarise"></option>
+          </datalist>
+          <label id="wallet-field">Seller wallet address<input name="payTo" placeholder="0x…" pattern="0x[a-fA-F0-9]{40}" /></label>
           <label class="wide">Description<textarea name="description" required rows="2" placeholder="What does one paid request do? Include limits."></textarea></label>
           <label class="wide">Input JSON Schema<textarea name="inputSchema" required rows="6" spellcheck="false"></textarea></label>
           <label class="wide">Output JSON Schema<textarea name="outputSchema" required rows="6" spellcheck="false"></textarea></label>
