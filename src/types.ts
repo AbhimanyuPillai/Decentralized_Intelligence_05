@@ -14,6 +14,8 @@ export interface SellerListing {
   description: string;
   endpointUrl: string;
   priceUnits: string;
+  paymentRequired?: boolean;
+  ready?: boolean;
   network: string;
   asset: string;
   payTo: string;

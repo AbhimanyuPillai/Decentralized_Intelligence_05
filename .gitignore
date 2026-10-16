@@ -4,5 +4,8 @@ dist/
 marketplace.sqlite
 marketplace.sqlite-shm
 marketplace.sqlite-wal
+seller.sqlite
+seller.sqlite-shm
+seller.sqlite-wal
 marketplace-server.log
 marketplace-server-error.log

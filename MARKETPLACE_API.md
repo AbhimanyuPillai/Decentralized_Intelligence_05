@@ -29,7 +29,11 @@ Returns one full listing, including its input and output schemas. Returns `404` 
 
 Send a JSON seller listing with `id`, `name`, `category`, `description`, `endpointUrl`, `priceUnits`, `network`, `asset`, `payTo`, `inputSchema`, and `outputSchema`. The Marketplace sets reputation itself and ignores any reputation values supplied by the seller.
 
-The endpoint returns `201` and the saved listing, or `400` with an error description if the listing is invalid. Use a public HTTPS endpoint and a real testnet wallet address before registering a live seller.
+The website's **Register seller** form submits to this endpoint. Contract examples are not automatically published. The endpoint returns `201` and the saved listing, or `400` with an error description if the listing is invalid.
+
+In free test mode (`SELLER_PAYMENTS_ENABLED=false`), the server sets the listing price to zero, marks it `paymentRequired: false`, and does not need a seller wallet. HTTPS URLs and localhost HTTP URLs are accepted. In paid mode (`SELLER_PAYMENTS_ENABLED=true`), use a public HTTPS endpoint, a real Base Sepolia receiving address, and a positive price. The server sets payment fields from its mode rather than trusting values sent by the browser.
+
+`GET /api/config` returns the active registration mode so the website can show the correct form fields.
 
 ## Health check
 
