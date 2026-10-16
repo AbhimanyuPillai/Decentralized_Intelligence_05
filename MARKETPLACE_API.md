@@ -31,7 +31,7 @@ Send a JSON seller listing with `id`, `name`, `category`, `description`, `endpoi
 
 The website's **Register seller** form submits to this endpoint. Contract examples are not automatically published. The endpoint returns `201` and the saved listing, or `400` with an error description if the listing is invalid.
 
-In free test mode (`SELLER_PAYMENTS_ENABLED=false`), the server sets the listing price to zero, marks it `paymentRequired: false`, and does not need a seller wallet. HTTPS URLs and localhost HTTP URLs are accepted. In paid mode (`SELLER_PAYMENTS_ENABLED=true`), use a public HTTPS endpoint, a real Base Sepolia receiving address, and a positive price. The server sets payment fields from its mode rather than trusting values sent by the browser.
+In local free test mode (`NODE_ENV` is not `production` and `SELLER_PAYMENTS_ENABLED=false`), both apps use localhost HTTP to avoid browser warnings from self-signed development certificates. The server sets the listing price to zero, marks it `paymentRequired: false`, and does not need a seller wallet. In paid or production mode, both apps use HTTPS; seller endpoints must be public HTTPS endpoints with a real Base Sepolia receiving address and a positive price. The server sets payment fields from its mode rather than trusting values sent by the browser.
 
 `GET /api/config` returns the active registration mode so the website can show the correct form fields.
 
@@ -43,7 +43,7 @@ Returns `{ "status": "ok", "service": "marketplace" }` when the API is running.
 
 ## Who calls the seller?
 
-The buyer reads a listing from the Marketplace, then sends the paid request directly to the seller's `endpointUrl`. After the full seller call finishes, the buyer sends one ledger record to `POST /api/ledger`.
+The buyer reads a listing from the Marketplace, then sends the request directly to the seller's `endpointUrl`. After the full seller call finishes, the buyer sends one ledger record to `POST /api/ledger`.
 
 The buyer sets `askedPriceUnits` to `"0"` if it never received a 402 quote. It measures `latencyMs` from the first HTTP request until the full cycle ends, including quote handling, signing, settlement, and output validation. A paid status must include the real transaction hash; the Marketplace creates the explorer link itself. An uncharged status must have `amountPaidUnits: "0"` and no transaction hash.
 

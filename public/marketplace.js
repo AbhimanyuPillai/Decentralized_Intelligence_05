@@ -109,12 +109,12 @@ async function loadServices() {
   serviceList.replaceChildren();
 
   const query = new URLSearchParams();
-  const category = document.querySelector("#category-filter").value;
-  const maxPrice = document.querySelector("#max-price-filter").value.trim();
-  if (category) query.set("category", category);
-  if (maxPrice) query.set("maxPriceUnits", usdcToUnits(maxPrice));
-
   try {
+    const category = document.querySelector("#category-filter").value;
+    const maxPrice = document.querySelector("#max-price-filter").value.trim();
+    if (category) query.set("category", category);
+    if (maxPrice) query.set("maxPriceUnits", usdcToUnits(maxPrice));
+
     const sellers = await requestJson(`/api/registry?${query.toString()}`);
     if (sellers.length === 0) {
       showMessage(servicesMessage, "No services are registered yet.");
@@ -243,7 +243,7 @@ function updateRegistrationFields() {
   sellerWalletInput.required = paymentsEnabled;
   document.querySelector("#registration-help").textContent = paymentsEnabled
     ? "Paid mode is enabled. Use an HTTPS service URL, a positive price, and a Base Sepolia receiving wallet."
-    : "Free test mode is enabled. Use a local URL such as http://localhost:4000/sellers/movie-scraper/scrape; no wallet is needed.";
+    : "Free test mode is enabled. Use a local service URL such as http://localhost:3000/sellers/movie-scraper/scrape; no wallet is needed.";
 }
 
 async function loadRegistrationConfig() {

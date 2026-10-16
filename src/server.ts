@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
-import { createServer } from "node:https";
+import { createServer as createHttpServer } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
 import path from "node:path";
 import { mountMovieScraper } from "./sellers/movie-scraper/routes.js";
 import { mountMovieFacts } from "./sellers/movie-facts/routes.js";
@@ -18,21 +19,35 @@ import { loadLocalEnvironment, readLocalTlsFiles } from "./config.js";
 loadLocalEnvironment();
 
 const app = express();
-const port = Number(process.env.MARKETPLACE_PORT ?? process.env.PORT ?? 3000);
-const buyerOrigin = process.env.BUYER_ORIGIN ?? "https://localhost:3001";
+const configuredPort = process.env.MARKETPLACE_PORT ?? process.env.PORT;
+const port = configuredPort ? Number(configuredPort) : 3000;
+const buyerPort = process.env.BUYER_PORT ?? "3001";
+const useLocalHttp = process.env.NODE_ENV !== "production" && process.env.SELLER_PAYMENTS_ENABLED !== "true";
+const protocol = useLocalHttp ? "http" : "https";
+const host = process.env.HOST ?? (useLocalHttp ? "::1" : "0.0.0.0");
+const buyerOrigin = process.env.BUYER_ORIGIN ?? `${protocol}://localhost:${buyerPort}`;
+
+if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  throw new Error("MARKETPLACE_PORT must be a whole number between 1 and 65535.");
+}
+
+function isRegistryApiPath(pathname: string): boolean {
+  return pathname === "/api/registry" || pathname.startsWith("/api/registry/");
+}
 
 app.use(express.json({ limit: "256kb" }));
 mountMovieScraper(app);
 mountMovieFacts(app);
 mountMovieSummary(app);
 app.use((request, response, next) => {
-  if (request.headers.origin === buyerOrigin && request.path.startsWith("/api/registry")) {
+  const isRegistryRequest = isRegistryApiPath(request.path);
+  if (request.headers.origin === buyerOrigin && isRegistryRequest) {
     response.setHeader("Access-Control-Allow-Origin", buyerOrigin);
     response.setHeader("Vary", "Origin");
     response.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
     response.setHeader("Access-Control-Allow-Headers", "Accept");
   }
-  if (request.method === "OPTIONS" && request.path.startsWith("/api/registry")) {
+  if (request.method === "OPTIONS" && isRegistryRequest) {
     if (request.headers.origin !== buyerOrigin) {
       response.sendStatus(403);
       return;
@@ -105,14 +120,26 @@ app.post("/api/registry", (request, response) => {
 
 // Store one complete buyer-reported call outcome.
 app.post("/api/ledger", (request, response) => {
+  let record: ReturnType<typeof parseLedgerRecord>;
   try {
-    const record = parseLedgerRecord(request.body);
+    record = parseLedgerRecord(request.body);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Invalid call record.";
+    response.status(400).json({ error: message });
+    return;
+  }
+
+  try {
     saveLedgerRecord(record);
     response.status(201).json(record);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Invalid call record.";
-    const isDuplicate = message.includes("UNIQUE constraint failed: ledger.id");
-    response.status(isDuplicate ? 409 : 400).json({ error: message });
+    const message = error instanceof Error ? error.message : "Could not save call record.";
+    if (message.includes("UNIQUE constraint failed: ledger.id")) {
+      response.status(409).json({ error: "A call record with this id already exists." });
+      return;
+    }
+    console.error("Could not save call record.", message);
+    response.status(500).json({ error: "Could not save call record." });
   }
 });
 
@@ -125,6 +152,10 @@ app.get("/api/ledger", (request, response) => {
   response.json(listLedgerRecords(limit));
 });
 
-createServer(readLocalTlsFiles(), app).listen(port, "0.0.0.0", () => {
-  console.log(`Marketplace HTTPS listening on https://localhost:${port}`);
+const server = useLocalHttp
+  ? createHttpServer(app)
+  : createHttpsServer(readLocalTlsFiles(), app);
+
+server.listen(port, host, () => {
+  console.log(`Marketplace ${protocol.toUpperCase()} listening on ${host}:${port}`);
 });

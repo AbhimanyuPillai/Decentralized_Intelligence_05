@@ -14,18 +14,18 @@ One end-to-end example scrapes 2010–2013 (four scraper calls), selects three f
 
 The scraper source (Scrap This Site) and movie-facts source (English Wikipedia) are already configured in code; they need no API keys. For now, leave `MOVIE_SUMMARY_API_URL`, `MOVIE_SUMMARY_API_KEY`, and `MOVIE_SUMMARY_MODEL` unset. The Hindi summary listing reports `ready: false`, and its endpoint returns 503 until you choose and configure an OpenAI-compatible provider. When you choose one, set its chat-completions URL and model in `.env`; put the API key in `.env` only, never in the website form or browser.
 
-For this same-computer test, leave `PUBLIC_BASE_URL` blank and enter service URLs in the website form using `http://localhost:4000` plus the route below. The form offers these local routes as suggestions. For another computer later, expose port 4000 through an HTTPS tunnel, set `PUBLIC_BASE_URL` to its origin, and restart the server. Free test routes are limited to 30 requests per minute per seller and client IP.
+For this same-computer test, leave `PUBLIC_BASE_URL` blank and enter service URLs in the website form using `http://localhost:3000` plus the route below. The seller routes run in the Marketplace server on port 3000. For another computer later, expose port 3000 through an HTTPS tunnel, set `PUBLIC_BASE_URL` to its origin, and restart the server. Free test routes are limited to 30 requests per minute per seller and client IP.
 
 In free test mode, the website sets the price to zero and does not ask for a wallet. To enable paid registration later, set `SELLER_PAYMENTS_ENABLED=true`; the form will then require a positive price, HTTPS endpoint, and Base Sepolia receiving wallet.
 
 ## Register through the website
 
-1. Open `http://localhost:4000` and choose **Register seller**. The browse list starts empty until you submit a registration.
-2. Register one service per form submission. Use the service ID, display name, category, endpoint, description, and JSON schemas shown by its manifest at `http://localhost:4000/sellers/{service-id}/manifest`.
+1. Open `http://localhost:3000` and choose **Register seller**. The browse list starts empty until you submit a registration.
+2. Register one service per form submission. Use the service ID, display name, category, endpoint, description, and JSON schemas shown by its manifest at `http://localhost:3000/sellers/{service-id}/manifest`.
 3. For this same-computer test, use one of these endpoint URLs:
-   - `http://localhost:4000/sellers/movie-scraper/scrape`
-   - `http://localhost:4000/sellers/movie-facts/lookup`
-   - `http://localhost:4000/sellers/movie-summary/summarise`
+   - `http://localhost:3000/sellers/movie-scraper/scrape`
+   - `http://localhost:3000/sellers/movie-facts/lookup`
+   - `http://localhost:3000/sellers/movie-summary/summarise`
 4. Leave price at zero and wallet blank while free test mode is active. The server sets the listing's payment fields itself.
 5. The scraper and facts services are ready without external credentials. The summary seller can be registered, but it will be marked unready and return 503 until its inference provider is configured.
 

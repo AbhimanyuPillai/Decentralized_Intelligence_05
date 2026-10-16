@@ -55,9 +55,17 @@ function parseBudget(value) {
   return units.toString();
 }
 
+function isAllowedLocalHttp(url) {
+  return location.protocol === "http:" &&
+    url.protocol === "http:" &&
+    ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+}
+
 function getRegistryUrl() {
   const url = new URL(marketplaceInput.value.trim());
-  if (url.protocol !== "https:") throw new Error("Marketplace address must use HTTPS.");
+  if (url.protocol !== "https:" && !isAllowedLocalHttp(url)) {
+    throw new Error("Use HTTPS, or localhost HTTP while running the free local demo.");
+  }
   if (url.username || url.password) throw new Error("Do not put credentials in the Marketplace address.");
   url.search = "";
   url.hash = "";
@@ -139,7 +147,7 @@ document.querySelector("#confirm-task").addEventListener("click", async () => {
 
   const button = document.querySelector("#confirm-task");
   button.disabled = true;
-  showStatus("Task confirmed. Scout is checking the Marketplace registry over HTTPS…");
+  showStatus("Task confirmed. Scout is checking the Marketplace registry…");
   appendBubble("user", `Confirmed task: ${task}\nMaximum budget: ${budgetInput.value.trim()} USDC`);
 
   const startedAt = performance.now();
@@ -151,21 +159,25 @@ document.querySelector("#confirm-task").addEventListener("click", async () => {
       redirect: "error",
       signal: AbortSignal.timeout(15000)
     });
-    if (!response.url.startsWith("https:")) throw new Error("Marketplace connection did not remain on HTTPS.");
+    const finalUrl = new URL(response.url);
+    if (finalUrl.protocol !== "https:" && !isAllowedLocalHttp(finalUrl)) {
+      throw new Error("Marketplace connection did not remain on HTTPS or local test mode.");
+    }
     const listings = await response.json();
     if (!response.ok) throw new Error(listings.error ?? `Registry request failed (${response.status}).`);
     if (!Array.isArray(listings)) throw new Error("Marketplace registry did not return a seller list.");
 
     const latencyMs = Math.round(performance.now() - startedAt);
+    const connectionType = finalUrl.protocol === "https:" ? "HTTPS" : "local HTTP";
     appendBubble(
       "assistant",
-      `Marketplace registry responded over HTTPS in ${latencyMs} ms. I found ${listings.length} listing${listings.length === 1 ? "" : "s"}. This stage does not select or call sellers, validate their task output, write a ledger entry, or make a payment. Budget available for later stages: ${budgetUnits} atomic USDC units.`,
+      `Marketplace registry responded over ${connectionType} in ${latencyMs} ms. I found ${listings.length} listing${listings.length === 1 ? "" : "s"}. This stage does not select or call sellers, validate their task output, write a ledger entry, or make a payment. Budget available for later stages: ${budgetUnits} atomic USDC units.`,
       listings
     );
-    showStatus(`HTTPS registry connected · ${latencyMs} ms · no seller call or payment made`, "success");
+    showStatus(`${connectionType} registry connected · ${latencyMs} ms · no seller call or payment made`, "success");
     confirmationCard.hidden = true;
   } catch (error) {
-    appendBubble("assistant", `I couldn’t reach the Marketplace registry over HTTPS: ${error.message}\nNo seller call or payment was made.`);
+    appendBubble("assistant", `I couldn’t reach the Marketplace registry: ${error.message}\nNo seller call or payment was made.`);
     showStatus(error.message, "error");
   } finally {
     button.disabled = false;

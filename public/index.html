@@ -74,11 +74,11 @@
             </select>
           </label>
           <label id="price-field">Price per request (USDC)<input name="priceUsdc" required inputmode="decimal" placeholder="0.005" /></label>
-          <label class="wide">Service URL<input name="endpointUrl" required type="url" list="local-service-endpoints" placeholder="http://localhost:4000/sellers/movie-scraper/scrape" /></label>
+          <label class="wide">Service URL<input name="endpointUrl" required type="url" list="local-service-endpoints" placeholder="http://localhost:3000/sellers/movie-scraper/scrape" /></label>
           <datalist id="local-service-endpoints">
-            <option value="http://localhost:4000/sellers/movie-scraper/scrape"></option>
-            <option value="http://localhost:4000/sellers/movie-facts/lookup"></option>
-            <option value="http://localhost:4000/sellers/movie-summary/summarise"></option>
+            <option value="http://localhost:3000/sellers/movie-scraper/scrape"></option>
+            <option value="http://localhost:3000/sellers/movie-facts/lookup"></option>
+            <option value="http://localhost:3000/sellers/movie-summary/summarise"></option>
           </datalist>
           <label id="wallet-field">Seller wallet address<input name="payTo" placeholder="0x…" pattern="0x[a-fA-F0-9]{40}" /></label>
           <label class="wide">Description<textarea name="description" required rows="2" placeholder="What does one paid request do? Include limits."></textarea></label>

@@ -12,24 +12,24 @@
     <header class="topbar buyer-topbar">
       <a class="brand" href="/buyer.html">Scout</a>
       <span class="buyer-subtitle">Buyer dashboard</span>
-      <span class="network-pill">Marketplace access · HTTPS only</span>
+      <span class="network-pill">Local test mode</span>
     </header>
 
     <main class="buyer-main">
       <section class="buyer-intro">
         <p class="eyebrow">Scout control panel</p>
         <h1>What should Scout work on?</h1>
-        <p>Describe a task and set a spending limit. Scout will first check the Marketplace registry over HTTPS.</p>
+        <p>Describe a task and set a spending limit. Scout checks the Marketplace registry after you confirm.</p>
       </section>
 
       <section class="connection-card" aria-labelledby="connection-title">
         <div>
           <p class="eyebrow">Marketplace connection</p>
-          <h2 id="connection-title">Marketplace HTTPS address</h2>
+          <h2 id="connection-title">Marketplace address</h2>
         </div>
-        <label class="sr-only" for="marketplace-url">Marketplace HTTPS URL</label>
-        <input id="marketplace-url" type="url" value="https://localhost:3000" placeholder="https://marketplace.example" autocomplete="url" required />
-        <p class="connection-help">Scout contacts <code>/api/registry</code> directly over HTTPS only, and only after you confirm the task. The Marketplace must allow this buyer origin through CORS.</p>
+        <label class="sr-only" for="marketplace-url">Marketplace URL</label>
+        <input id="marketplace-url" type="url" value="http://localhost:3000" placeholder="http://localhost:3000" autocomplete="url" required />
+        <p class="connection-help">Scout contacts <code>/api/registry</code> only after you confirm the task. Local free test mode uses localhost HTTP; paid or production mode uses HTTPS.</p>
       </section>
 
       <section class="conversation" aria-label="Scout conversation">

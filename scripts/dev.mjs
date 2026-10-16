@@ -1,4 +1,5 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import http from "node:http";
 import https from "node:https";
 import { readFileSync } from "node:fs";
 
@@ -10,6 +11,16 @@ try {
   }
 } catch {
   // The two services can also receive their settings from the environment.
+}
+
+const useLocalHttp = process.env.NODE_ENV !== "production" && process.env.SELLER_PAYMENTS_ENABLED !== "true";
+const protocol = useLocalHttp ? "http" : "https";
+
+if (!useLocalHttp) {
+  const tlsSetup = spawnSync(process.execPath, ["scripts/setup-local-tls.mjs"], { stdio: "inherit" });
+  if (tlsSetup.error || tlsSetup.status !== 0) {
+    throw new Error("Local HTTPS certificate setup failed.");
+  }
 }
 
 const services = [
@@ -39,29 +50,39 @@ let stopping = false;
 const marketplacePort = process.env.MARKETPLACE_PORT ?? "3000";
 const buyerPort = process.env.BUYER_PORT ?? "3001";
 
-function waitForHttpsHealth(port, name, attempts = 30) {
+function requestUrl(url, headers = {}) {
+  const transport = url.startsWith("https:") ? https : http;
+  return new Promise((resolve, reject) => {
+    const request = transport.get(url, {
+      ...(url.startsWith("https:") ? { rejectUnauthorized: false } : {}),
+      headers
+    }, (response) => {
+      let body = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => { body += chunk; });
+      response.on("end", () => resolve({ status: response.statusCode, headers: response.headers, body }));
+    });
+    request.on("error", reject);
+    request.setTimeout(3000, () => request.destroy(new Error("Local service request timed out.")));
+  });
+}
+
+function waitForHealth(port, name, attempts = 30) {
   return new Promise((resolve, reject) => {
     let remaining = attempts;
     const tryRequest = () => {
-      const request = https.get(`https://localhost:${port}/health`, { rejectUnauthorized: false }, (response) => {
-        let body = "";
-        response.setEncoding("utf8");
-        response.on("data", (chunk) => { body += chunk; });
-        response.on("end", () => {
-          try {
-            if (response.statusCode !== 200 || JSON.parse(body).status !== "ok") throw new Error("Health check failed.");
-            resolve();
-          } catch {
-            retry();
-          }
-        });
-      });
-      request.on("error", retry);
-      request.setTimeout(1000, () => request.destroy(new Error("Health check timed out.")));
+      requestUrl(`${protocol}://localhost:${port}/health`).then((response) => {
+        try {
+          if (response.status !== 200 || JSON.parse(response.body).status !== "ok") throw new Error("Health check failed.");
+          resolve();
+        } catch {
+          retry();
+        }
+      }, retry);
     };
     const retry = () => {
       if (--remaining <= 0) {
-        reject(new Error(`${name} did not become healthy on HTTPS port ${port}.`));
+        reject(new Error(`${name} did not become healthy at ${protocol}://localhost:${port}.`));
         return;
       }
       setTimeout(tryRequest, 500);
@@ -70,31 +91,18 @@ function waitForHttpsHealth(port, name, attempts = 30) {
   });
 }
 
-function requestHttps(url, headers = {}) {
-  return new Promise((resolve, reject) => {
-    const request = https.get(url, { rejectUnauthorized: false, headers }, (response) => {
-      let body = "";
-      response.setEncoding("utf8");
-      response.on("data", (chunk) => { body += chunk; });
-      response.on("end", () => resolve({ status: response.statusCode, headers: response.headers, body }));
-    });
-    request.on("error", reject);
-    request.setTimeout(3000, () => request.destroy(new Error("HTTPS verification request timed out.")));
-  });
-}
-
 Promise.all([
-  waitForHttpsHealth(marketplacePort, "Marketplace"),
-  waitForHttpsHealth(buyerPort, "Scout buyer")
+  waitForHealth(marketplacePort, "Marketplace"),
+  waitForHealth(buyerPort, "Scout buyer")
 ]).then(() => {
   return Promise.all([
-    requestHttps(`https://localhost:${marketplacePort}/api/registry`, {
-      Origin: process.env.BUYER_ORIGIN ?? `https://localhost:${buyerPort}`
+    requestUrl(`${protocol}://localhost:${marketplacePort}/api/registry`, {
+      Origin: process.env.BUYER_ORIGIN ?? `${protocol}://localhost:${buyerPort}`
     }),
-    requestHttps(`https://localhost:${buyerPort}/buyer.html`)
+    requestUrl(`${protocol}://localhost:${buyerPort}/buyer.html`)
   ]);
 }).then(([registryResponse, buyerPageResponse]) => {
-  const expectedOrigin = process.env.BUYER_ORIGIN ?? `https://localhost:${buyerPort}`;
+  const expectedOrigin = process.env.BUYER_ORIGIN ?? `${protocol}://localhost:${buyerPort}`;
   if (
     registryResponse.status !== 200 ||
     registryResponse.headers["access-control-allow-origin"] !== expectedOrigin ||
@@ -102,10 +110,10 @@ Promise.all([
     buyerPageResponse.status !== 200 ||
     !buyerPageResponse.body.includes("Scout Buyer Dashboard")
   ) {
-    throw new Error("HTTPS Marketplace-to-buyer readiness check failed.");
+    throw new Error("Marketplace-to-buyer readiness check failed.");
   }
-  console.log(`Both HTTPS services are healthy: Marketplace :${marketplacePort}, Scout buyer :${buyerPort}.`);
-  console.log("Direct HTTPS registry access and buyer-origin CORS are verified.");
+  console.log(`Both ${protocol.toUpperCase()} services are healthy: Marketplace :${marketplacePort}, Scout buyer :${buyerPort}.`);
+  console.log(`Registry access and buyer-origin CORS are verified over ${protocol.toUpperCase()}.`);
 }).catch((error) => {
   console.error(error.message);
   shutdown(1);

@@ -6,7 +6,9 @@
   "description": "Marketplace directory and ledger for the pay-per-call agent economy hackathon.",
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "predev:marketplace": "node scripts/setup-local-tls.mjs",
     "dev:marketplace": "tsx watch src/server.ts",
+    "predev:buyer": "node scripts/setup-local-tls.mjs",
     "dev:buyer": "tsx watch src/buyer-server.ts",
     "start": "node scripts/dev.mjs",
     "typecheck": "tsc --noEmit"

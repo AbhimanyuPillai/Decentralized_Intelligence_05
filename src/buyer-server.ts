@@ -1,12 +1,16 @@
 import express from "express";
 import path from "node:path";
-import { createServer } from "node:https";
+import { createServer as createHttpServer } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
 import { loadLocalEnvironment, readLocalTlsFiles } from "./config.js";
 
 loadLocalEnvironment();
 
 const app = express();
 const port = Number(process.env.BUYER_PORT ?? 3001);
+const useLocalHttp = process.env.NODE_ENV !== "production" && process.env.SELLER_PAYMENTS_ENABLED !== "true";
+const protocol = useLocalHttp ? "http" : "https";
+const host = process.env.HOST ?? (useLocalHttp ? "::1" : "0.0.0.0");
 const publicDirectory = path.join(process.cwd(), "public");
 
 app.use(express.json({ limit: "256kb" }));
@@ -101,6 +105,10 @@ app.post("/api/chat", async (request, response) => {
   }
 });
 
-createServer(readLocalTlsFiles(), app).listen(port, "127.0.0.1", () => {
-  console.log(`Scout buyer HTTPS listening on https://localhost:${port}`);
+const server = useLocalHttp
+  ? createHttpServer(app)
+  : createHttpsServer(readLocalTlsFiles(), app);
+
+server.listen(port, host, () => {
+  console.log(`Scout buyer ${protocol.toUpperCase()} listening on ${host}:${port}`);
 });
