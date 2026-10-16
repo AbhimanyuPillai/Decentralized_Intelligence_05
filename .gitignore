@@ -1,4 +1,6 @@
 node_modules/
+.npm-cache/
+certs/*.pem
 dist/
 .env
 marketplace.sqlite

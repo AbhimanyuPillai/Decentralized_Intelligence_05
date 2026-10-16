@@ -5,8 +5,10 @@
   "type": "module",
   "description": "Marketplace directory and ledger for the pay-per-call agent economy hackathon.",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "start": "tsx src/server.ts",
+    "dev": "node scripts/dev.mjs",
+    "dev:marketplace": "tsx watch src/server.ts",
+    "dev:buyer": "tsx watch src/buyer-server.ts",
+    "start": "node scripts/dev.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

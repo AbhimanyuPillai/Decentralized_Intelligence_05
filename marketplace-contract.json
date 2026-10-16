@@ -22,30 +22,101 @@
     "title": "SellerListing",
     "type": "object",
     "properties": {
-      "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
-      "name": { "type": "string", "minLength": 1 },
-      "category": { "type": "string", "enum": ["scraping", "data", "inference"] },
-      "description": { "type": "string", "minLength": 1 },
-      "endpointUrl": { "type": "string" },
-      "priceUnits": { "type": "string", "pattern": "^[1-9][0-9]*$" },
-      "network": { "type": "string", "const": "eip155:84532" },
-      "asset": { "type": "string", "const": "0x036CbD53842c5426634e7929541eC2318f3dCF7e" },
-      "payTo": { "type": "string", "pattern": "^0x[a-fA-F0-9]{40}$" },
-      "inputSchema": { "type": "object" },
-      "outputSchema": { "type": "object" },
+      "id": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]*$"
+      },
+      "name": {
+        "type": "string",
+        "minLength": 1
+      },
+      "category": {
+        "type": "string",
+        "enum": [
+          "scraping",
+          "data",
+          "inference"
+        ]
+      },
+      "description": {
+        "type": "string",
+        "minLength": 1
+      },
+      "endpointUrl": {
+        "type": "string"
+      },
+      "priceUnits": {
+        "type": "string",
+        "pattern": "^[1-9][0-9]*$"
+      },
+      "network": {
+        "type": "string",
+        "const": "eip155:84532"
+      },
+      "asset": {
+        "type": "string",
+        "const": "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+      },
+      "payTo": {
+        "type": "string",
+        "pattern": "^0x[a-fA-F0-9]{40}$"
+      },
+      "inputSchema": {
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object"
+      },
       "reputation": {
         "type": "object",
         "properties": {
-          "totalCalls": { "type": "integer", "minimum": 0 },
-          "successfulCalls": { "type": "integer", "minimum": 0 },
-          "successRatePercent": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
-          "medianLatencyMs": { "type": ["number", "null"], "minimum": 0 }
+          "totalCalls": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "successfulCalls": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "successRatePercent": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100
+          },
+          "medianLatencyMs": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          }
         },
-        "required": ["totalCalls", "successfulCalls", "successRatePercent", "medianLatencyMs"],
+        "required": [
+          "totalCalls",
+          "successfulCalls",
+          "successRatePercent",
+          "medianLatencyMs"
+        ],
         "additionalProperties": false
       }
     },
-    "required": ["id", "name", "category", "description", "endpointUrl", "priceUnits", "network", "asset", "payTo", "inputSchema", "outputSchema", "reputation"],
+    "required": [
+      "id",
+      "name",
+      "category",
+      "description",
+      "endpointUrl",
+      "priceUnits",
+      "network",
+      "asset",
+      "payTo",
+      "inputSchema",
+      "outputSchema",
+      "reputation"
+    ],
     "additionalProperties": false
   },
   "sellers": [
@@ -58,39 +129,79 @@
       "priceUnits": "5000",
       "network": "eip155:84532",
       "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-      "payTo": "REPLACE_ME_WITH_40_HEX_TESTNET_ADDRESS",
+      "payTo": "0xD0a2c0d5886B5B49CA39116816613a007C246F8b",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
-        "properties": { "page": { "type": "integer", "minimum": 1, "maximum": 50 } },
-        "required": ["page"],
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "required": [
+          "page"
+        ],
         "additionalProperties": false
       },
       "outputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "page": { "type": "integer", "minimum": 1 },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
           "books": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "id": { "type": "string", "minLength": 1 },
-                "title": { "type": "string", "minLength": 1 },
-                "priceGbp": { "type": "number", "minimum": 0 },
-                "stars": { "type": "integer", "minimum": 1, "maximum": 5 },
-                "description": { "type": "string" }
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "priceGbp": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "stars": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                },
+                "description": {
+                  "type": "string"
+                }
               },
-              "required": ["id", "title", "priceGbp", "stars", "description"],
+              "required": [
+                "id",
+                "title",
+                "priceGbp",
+                "stars",
+                "description"
+              ],
               "additionalProperties": false
             }
           }
         },
-        "required": ["page", "books"],
+        "required": [
+          "page",
+          "books"
+        ],
         "additionalProperties": false
       },
-      "reputation": { "totalCalls": 0, "successfulCalls": 0, "successRatePercent": null, "medianLatencyMs": null }
+      "reputation": {
+        "totalCalls": 0,
+        "successfulCalls": 0,
+        "successRatePercent": null,
+        "medianLatencyMs": null
+      }
     },
     {
       "id": "fx-rates",
@@ -101,31 +212,66 @@
       "priceUnits": "1000",
       "network": "eip155:84532",
       "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-      "payTo": "REPLACE_ME_WITH_40_HEX_TESTNET_ADDRESS",
+      "payTo": "0xD0a2c0d5886B5B49CA39116816613a007C246F8b",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "from": { "type": "string", "const": "GBP" },
-          "to": { "type": "string", "const": "INR" }
+          "from": {
+            "type": "string",
+            "const": "GBP"
+          },
+          "to": {
+            "type": "string",
+            "const": "INR"
+          }
         },
-        "required": ["from", "to"],
+        "required": [
+          "from",
+          "to"
+        ],
         "additionalProperties": false
       },
       "outputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "from": { "type": "string", "const": "GBP" },
-          "to": { "type": "string", "const": "INR" },
-          "rate": { "type": "number", "exclusiveMinimum": 0 },
-          "timestamp": { "type": "string", "format": "date-time" },
-          "source": { "type": "string", "minLength": 1 }
+          "from": {
+            "type": "string",
+            "const": "GBP"
+          },
+          "to": {
+            "type": "string",
+            "const": "INR"
+          },
+          "rate": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1
+          }
         },
-        "required": ["from", "to", "rate", "timestamp", "source"],
+        "required": [
+          "from",
+          "to",
+          "rate",
+          "timestamp",
+          "source"
+        ],
         "additionalProperties": false
       },
-      "reputation": { "totalCalls": 0, "successfulCalls": 0, "successRatePercent": null, "medianLatencyMs": null }
+      "reputation": {
+        "totalCalls": 0,
+        "successfulCalls": 0,
+        "successRatePercent": null,
+        "medianLatencyMs": null
+      }
     },
     {
       "id": "hindi-summary",
@@ -136,7 +282,7 @@
       "priceUnits": "10000",
       "network": "eip155:84532",
       "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-      "payTo": "REPLACE_ME_WITH_40_HEX_TESTNET_ADDRESS",
+      "payTo": "0xD0a2c0d5886B5B49CA39116816613a007C246F8b",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -146,17 +292,28 @@
             "items": {
               "type": "object",
               "properties": {
-                "id": { "type": "string", "minLength": 1 },
-                "text": { "type": "string", "minLength": 1 }
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1
+                }
               },
-              "required": ["id", "text"],
+              "required": [
+                "id",
+                "text"
+              ],
               "additionalProperties": false
             },
             "minItems": 1,
             "maxItems": 2
           }
         },
-        "required": ["items"],
+        "required": [
+          "items"
+        ],
         "additionalProperties": false
       },
       "outputSchema": {
@@ -168,20 +325,36 @@
             "items": {
               "type": "object",
               "properties": {
-                "id": { "type": "string", "minLength": 1 },
-                "summary": { "type": "string", "minLength": 1 }
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "summary": {
+                  "type": "string",
+                  "minLength": 1
+                }
               },
-              "required": ["id", "summary"],
+              "required": [
+                "id",
+                "summary"
+              ],
               "additionalProperties": false
             },
             "minItems": 1,
             "maxItems": 2
           }
         },
-        "required": ["summaries"],
+        "required": [
+          "summaries"
+        ],
         "additionalProperties": false
       },
-      "reputation": { "totalCalls": 0, "successfulCalls": 0, "successRatePercent": null, "medianLatencyMs": null }
+      "reputation": {
+        "totalCalls": 0,
+        "successfulCalls": 0,
+        "successRatePercent": null,
+        "medianLatencyMs": null
+      }
     }
   ],
   "buyerTaskSchema": {
@@ -189,13 +362,35 @@
     "title": "BuyerTask",
     "type": "object",
     "properties": {
-      "taskId": { "type": "string", "minLength": 1 },
-      "prompt": { "type": "string", "minLength": 1 },
-      "budgetUnits": { "type": "string", "pattern": "^[1-9][0-9]*$" },
-      "network": { "type": "string", "const": "eip155:84532" },
-      "maxConcurrency": { "type": "integer", "minimum": 1, "maximum": 5 }
+      "taskId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "prompt": {
+        "type": "string",
+        "minLength": 1
+      },
+      "budgetUnits": {
+        "type": "string",
+        "pattern": "^[1-9][0-9]*$"
+      },
+      "network": {
+        "type": "string",
+        "const": "eip155:84532"
+      },
+      "maxConcurrency": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 5
+      }
     },
-    "required": ["taskId", "prompt", "budgetUnits", "network", "maxConcurrency"],
+    "required": [
+      "taskId",
+      "prompt",
+      "budgetUnits",
+      "network",
+      "maxConcurrency"
+    ],
     "additionalProperties": false
   },
   "exampleBuyerTask": {
@@ -210,22 +405,92 @@
     "title": "LedgerRecord",
     "type": "object",
     "properties": {
-      "id": { "type": "string", "minLength": 1 },
-      "timestamp": { "type": "string", "format": "date-time" },
-      "buyerAddress": { "type": "string", "pattern": "^0x[a-fA-F0-9]{40}$" },
-      "sellerId": { "type": "string", "minLength": 1 },
-      "serviceName": { "type": "string", "minLength": 1 },
-      "category": { "type": "string", "enum": ["scraping", "data", "inference"] },
-      "listedPriceUnits": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
-      "askedPriceUnits": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
-      "amountPaidUnits": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
-      "txHash": { "type": ["string", "null"], "pattern": "^0x[a-fA-F0-9]{64}$" },
-      "explorerUrl": { "type": ["string", "null"], "format": "uri" },
-      "status": { "type": "string", "enum": ["paid", "paid, output rejected", "refused", "failed and not charged"] },
-      "latencyMs": { "type": "integer", "minimum": 0 },
-      "reason": { "type": "string" }
+      "id": {
+        "type": "string",
+        "minLength": 1
+      },
+      "timestamp": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "buyerAddress": {
+        "type": "string",
+        "pattern": "^0x[a-fA-F0-9]{40}$"
+      },
+      "sellerId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "serviceName": {
+        "type": "string",
+        "minLength": 1
+      },
+      "category": {
+        "type": "string",
+        "enum": [
+          "scraping",
+          "data",
+          "inference"
+        ]
+      },
+      "listedPriceUnits": {
+        "type": "string",
+        "pattern": "^(0|[1-9][0-9]*)$"
+      },
+      "askedPriceUnits": {
+        "type": "string",
+        "pattern": "^(0|[1-9][0-9]*)$"
+      },
+      "amountPaidUnits": {
+        "type": "string",
+        "pattern": "^(0|[1-9][0-9]*)$"
+      },
+      "txHash": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "pattern": "^0x[a-fA-F0-9]{64}$"
+      },
+      "explorerUrl": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "uri"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "paid",
+          "paid, output rejected",
+          "refused",
+          "failed and not charged"
+        ]
+      },
+      "latencyMs": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "reason": {
+        "type": "string"
+      }
     },
-    "required": ["id", "timestamp", "buyerAddress", "sellerId", "serviceName", "category", "listedPriceUnits", "askedPriceUnits", "amountPaidUnits", "txHash", "explorerUrl", "status", "latencyMs"],
+    "required": [
+      "id",
+      "timestamp",
+      "buyerAddress",
+      "sellerId",
+      "serviceName",
+      "category",
+      "listedPriceUnits",
+      "askedPriceUnits",
+      "amountPaidUnits",
+      "txHash",
+      "explorerUrl",
+      "status",
+      "latencyMs"
+    ],
     "additionalProperties": false,
     "statusInvariants": {
       "paid": "amountPaidUnits > 0 and txHash/explorerUrl identify the real settlement.",

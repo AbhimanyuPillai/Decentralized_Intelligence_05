@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scout Buyer Dashboard</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/buyer.css" />
+    <script src="/buyer.js" defer></script>
+  </head>
+  <body class="buyer-page">
+    <header class="topbar buyer-topbar">
+      <a class="brand" href="/buyer.html">Scout</a>
+      <span class="buyer-subtitle">Buyer dashboard</span>
+      <span class="network-pill">Marketplace access · HTTPS only</span>
+    </header>
+
+    <main class="buyer-main">
+      <section class="buyer-intro">
+        <p class="eyebrow">Scout control panel</p>
+        <h1>What should Scout work on?</h1>
+        <p>Describe a task and set a spending limit. Scout will first check the Marketplace registry over HTTPS.</p>
+      </section>
+
+      <section class="connection-card" aria-labelledby="connection-title">
+        <div>
+          <p class="eyebrow">Marketplace connection</p>
+          <h2 id="connection-title">Marketplace HTTPS address</h2>
+        </div>
+        <label class="sr-only" for="marketplace-url">Marketplace HTTPS URL</label>
+        <input id="marketplace-url" type="url" value="https://localhost:3000" placeholder="https://marketplace.example" autocomplete="url" required />
+        <p class="connection-help">Scout contacts <code>/api/registry</code> directly over HTTPS only, and only after you confirm the task. The Marketplace must allow this buyer origin through CORS.</p>
+      </section>
+
+      <section class="conversation" aria-label="Scout conversation">
+        <div id="conversation-log" class="conversation-log" aria-live="polite" aria-relevant="additions">
+          <article class="chat-bubble assistant">Hi, I’m Scout. Tell me what you’re researching and I’ll ask a few questions to clarify the scope and the result you need. I won’t contact the Marketplace until you review and confirm a task.</article>
+        </div>
+
+        <div class="conversation-controls">
+          <label class="budget-field" for="budget-input">
+            Maximum budget
+            <span class="budget-input-wrap"><input id="budget-input" inputmode="decimal" value="0.050" /><span>USDC</span></span>
+          </label>
+        </div>
+
+        <section id="confirmation-card" class="confirmation-card" hidden aria-labelledby="confirmation-title">
+          <p class="eyebrow">Review before Marketplace lookup</p>
+          <h2 id="confirmation-title">Proposed research task</h2>
+          <label for="proposed-task">Task summary</label>
+          <textarea id="proposed-task" rows="3" maxlength="3500"></textarea>
+          <p id="budget-summary" class="connection-help"></p>
+          <button id="confirm-task" class="button" type="button">Confirm task and check Marketplace</button>
+        </section>
+        <form id="chat-form" class="chat-form">
+          <label class="sr-only" for="chat-input">Message Scout</label>
+          <textarea id="chat-input" rows="2" maxlength="3500" placeholder="Tell Scout more or answer a question…" required></textarea>
+          <button id="send-button" class="button" type="submit">Send</button>
+        </form>
+        <p id="chat-status" class="message" role="status"></p>
+      </section>
+    </main>
+  </body>
+</html>

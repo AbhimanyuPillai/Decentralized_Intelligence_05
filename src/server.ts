@@ -1,4 +1,5 @@
 import express from "express";
+import { createServer } from "node:https";
 import path from "node:path";
 import { listLedgerRecords, saveLedgerRecord } from "./marketplace/database.js";
 import { parseLedgerRecord } from "./marketplace/ledger.js";
@@ -9,12 +10,33 @@ import {
   seedListingsFromContract
 } from "./marketplace/registry.js";
 import type { SellerRegistration } from "./types.js";
+import { loadLocalEnvironment, readLocalTlsFiles } from "./config.js";
+
+loadLocalEnvironment();
 
 const app = express();
-const port = Number(process.env.PORT ?? 3000);
+const port = Number(process.env.MARKETPLACE_PORT ?? process.env.PORT ?? 3000);
+const buyerOrigin = process.env.BUYER_ORIGIN ?? "https://localhost:3001";
 
 app.use(express.json({ limit: "256kb" }));
 app.use(express.static(path.join(process.cwd(), "public")));
+app.use((request, response, next) => {
+  if (request.headers.origin === buyerOrigin && request.path.startsWith("/api/registry")) {
+    response.setHeader("Access-Control-Allow-Origin", buyerOrigin);
+    response.setHeader("Vary", "Origin");
+    response.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    response.setHeader("Access-Control-Allow-Headers", "Accept");
+  }
+  if (request.method === "OPTIONS" && request.path.startsWith("/api/registry")) {
+    if (request.headers.origin !== buyerOrigin) {
+      response.sendStatus(403);
+      return;
+    }
+    response.sendStatus(204);
+    return;
+  }
+  next();
+});
 seedListingsFromContract();
 
 app.get("/health", (_request, response) => {
@@ -90,6 +112,6 @@ app.get("/api/ledger", (request, response) => {
   response.json(listLedgerRecords(limit));
 });
 
-app.listen(port, "127.0.0.1", () => {
-  console.log(`Marketplace API listening on http://localhost:${port}`);
+createServer(readLocalTlsFiles(), app).listen(port, "127.0.0.1", () => {
+  console.log(`Marketplace HTTPS listening on https://localhost:${port}`);
 });
