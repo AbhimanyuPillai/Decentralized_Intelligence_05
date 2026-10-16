@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agent Marketplace</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/marketplace.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/">Agent Marketplace</a>
+      <nav class="tabs" role="tablist" aria-label="Marketplace sections">
+        <button class="tab-button active" id="services-tab" type="button" role="tab" aria-selected="true" aria-controls="services" data-tab="services">Browse services</button>
+        <button class="tab-button" id="register-tab" type="button" role="tab" aria-selected="false" aria-controls="register" data-tab="register">Register seller</button>
+        <button class="tab-button" id="ledger-tab" type="button" role="tab" aria-selected="false" aria-controls="ledger" data-tab="ledger">Call history</button>
+      </nav>
+      <span class="network-pill">Base Sepolia · Testnet</span>
+    </header>
+
+    <main>
+      <section class="intro">
+        <p class="eyebrow">Agent services, one request at a time</p>
+        <h1>Find a service for the job.</h1>
+        <p>Browse services that agents can discover and pay for per request.</p>
+      </section>
+
+      <section id="services" class="section tab-panel" role="tabpanel" aria-labelledby="services-tab">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Marketplace</p>
+            <h2>Available services</h2>
+          </div>
+          <button id="refresh-services" class="button button-light" type="button">Refresh</button>
+        </div>
+
+        <form id="search-form" class="filter-row">
+          <label>
+            Category
+            <select id="category-filter">
+              <option value="">All categories</option>
+              <option value="scraping">Scraping</option>
+              <option value="data">Data</option>
+              <option value="inference">Inference</option>
+            </select>
+          </label>
+          <label>
+            Max price (USDC)
+            <input id="max-price-filter" inputmode="decimal" placeholder="e.g. 0.01" />
+          </label>
+          <button class="button" type="submit">Search services</button>
+        </form>
+        <p id="services-message" class="message" role="status"></p>
+        <div id="service-list" class="service-grid"></div>
+      </section>
+
+      <section id="register" class="section section-muted tab-panel" role="tabpanel" aria-labelledby="register-tab" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">For sellers</p>
+            <h2>List a service</h2>
+          </div>
+        </div>
+        <p class="section-copy">Describe the service and its JSON inputs and outputs. The Marketplace calculates reputation from recorded calls.</p>
+
+        <form id="seller-form" class="form-grid">
+          <label>Service ID<input name="id" required placeholder="e.g. book-scraper" pattern="[a-z0-9][a-z0-9-]*" /></label>
+          <label>Service name<input name="name" required placeholder="Book Scraper" /></label>
+          <label>Category
+            <select name="category" required>
+              <option value="scraping">Scraping</option>
+              <option value="data">Data</option>
+              <option value="inference">Inference</option>
+            </select>
+          </label>
+          <label>Price per request (USDC)<input name="priceUsdc" required inputmode="decimal" placeholder="0.005" /></label>
+          <label class="wide">Service URL<input name="endpointUrl" required type="url" placeholder="https://your-service.example/api" /></label>
+          <label>Seller wallet address<input name="payTo" required placeholder="0x…" pattern="0x[a-fA-F0-9]{40}" /></label>
+          <label class="wide">Description<textarea name="description" required rows="2" placeholder="What does one paid request do? Include limits."></textarea></label>
+          <label class="wide">Input JSON Schema<textarea name="inputSchema" required rows="6" spellcheck="false"></textarea></label>
+          <label class="wide">Output JSON Schema<textarea name="outputSchema" required rows="6" spellcheck="false"></textarea></label>
+          <div class="wide form-actions">
+            <button class="button" type="submit">Register service</button>
+            <p id="register-message" class="message" role="status"></p>
+          </div>
+        </form>
+      </section>
+
+      <section id="ledger" class="section tab-panel" role="tabpanel" aria-labelledby="ledger-tab" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Activity</p>
+            <h2>Call ledger</h2>
+          </div>
+          <button id="refresh-ledger" class="button button-light" type="button">Refresh</button>
+        </div>
+        <p id="ledger-message" class="message" role="status"></p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Time</th><th>Buyer</th><th>Seller</th><th>Listed</th><th>Asked</th><th>Paid</th><th>Status</th><th>Latency</th><th>Receipt</th></tr>
+            </thead>
+            <tbody id="ledger-rows"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <footer>Agent Marketplace · Testnet prototype</footer>
+  </body>
+</html>

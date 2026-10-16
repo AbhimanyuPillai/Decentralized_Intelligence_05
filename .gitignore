@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+marketplace.sqlite
+marketplace.sqlite-shm
+marketplace.sqlite-wal
+marketplace-server.log
+marketplace-server-error.log

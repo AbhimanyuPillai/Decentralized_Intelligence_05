@@ -26,7 +26,7 @@
       "name": { "type": "string", "minLength": 1 },
       "category": { "type": "string", "enum": ["scraping", "data", "inference"] },
       "description": { "type": "string", "minLength": 1 },
-      "endpointUrl": { "type": "string", "format": "uri" },
+      "endpointUrl": { "type": "string" },
       "priceUnits": { "type": "string", "pattern": "^[1-9][0-9]*$" },
       "network": { "type": "string", "const": "eip155:84532" },
       "asset": { "type": "string", "const": "0x036CbD53842c5426634e7929541eC2318f3dCF7e" },
