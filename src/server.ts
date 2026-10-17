@@ -16,8 +16,8 @@ import { mountFakeJobsScraper, fakeJobsScraperDefinition } from "./sellers/fakej
 import { mountJobFacts, jobFactsDefinition } from "./sellers/job-facts/routes.js";
 import { mountJobSummary, jobSummaryDefinition } from "./sellers/job-summary/routes.js";
 import { createSellerManifest } from "./sellers/shared/paidJsonEndpoint.js";
-import { hideAutoSeededFreeListings, listLedgerRecords, saveLedgerRecord } from "./marketplace/database.js";
-import { parseLedgerRecord } from "./marketplace/ledger.js";
+import { hideAutoSeededFreeListings, hideWebsiteListingsFromOtherPaymentMode, listLedgerRecords, saveLedgerRecord } from "./marketplace/database.js";
+import { LedgerVerificationUnavailableError, parseLedgerRecord, verifyPaidLedgerRecord } from "./marketplace/ledger.js";
 import {
   findSeller,
   registerSeller,
@@ -86,6 +86,10 @@ const hiddenAutoSeededListings = hideAutoSeededFreeListings();
 if (hiddenAutoSeededListings > 0) {
   console.info(`Unlisted ${hiddenAutoSeededListings} automatic free-test seller listing(s).`);
 }
+const hiddenModeMismatchedListings = hideWebsiteListingsFromOtherPaymentMode(process.env.SELLER_PAYMENTS_ENABLED === "true");
+if (hiddenModeMismatchedListings > 0) {
+  console.warn(`Unlisted ${hiddenModeMismatchedListings} manually registered listing(s) from a different payment mode.`);
+}
 
 // Publish the built-in sellers from the same definitions their endpoints use.
 const publicBaseUrl = process.env.PUBLIC_BASE_URL?.trim().replace(/\/+$/, "");
@@ -104,13 +108,9 @@ const builtInSellerDefinitions = [
 if (process.env.NODE_ENV !== "production" || publicBaseUrl) {
   for (const definition of builtInSellerDefinitions) {
     const manifest = createSellerManifest(definition, `${sellerBaseUrl}${definition.route}`);
-    if (process.env.SELLER_PAYMENTS_ENABLED === "true" && !manifest.ready) {
-      console.warn(`${definition.id} is not listed because its paid seller configuration is incomplete.`);
-      continue;
-    }
     try {
       registerSeller(manifest, "built_in");
-      console.info(`Registered built-in seller: ${definition.id}.`);
+      console.info(`Registered built-in seller: ${definition.id}${manifest.ready ? " (ready)" : " (needs setup)"}.`);
     } catch (error) {
       console.error(`Could not register built-in seller ${definition.id}.`, error instanceof Error ? error.message : "unknown error");
     }
@@ -181,14 +181,23 @@ app.post("/api/registry", (request, response) => {
     const seller = registerSeller(request.body as SellerRegistration);
     response.status(201).json(seller);
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Invalid seller listing.";
+    if (message.includes("already registered")) {
+      response.status(409).json({ error: message });
+      return;
+    }
+    if (message.includes("UNIQUE constraint failed: sellers.id")) {
+      response.status(409).json({ error: "A seller with this ID is already registered. Choose a new ID." });
+      return;
+    }
     response.status(400).json({
-      error: error instanceof Error ? error.message : "Invalid seller listing."
+      error: message
     });
   }
 });
 
 // Store one complete buyer-reported call outcome.
-app.post("/api/ledger", (request, response) => {
+app.post("/api/ledger", async (request, response) => {
   let record: ReturnType<typeof parseLedgerRecord>;
   try {
     record = parseLedgerRecord(request.body);
@@ -199,12 +208,24 @@ app.post("/api/ledger", (request, response) => {
   }
 
   try {
-    saveLedgerRecord(record);
-    response.status(201).json(record);
+    await verifyPaidLedgerRecord(record);
+    const verifiedRecord = record.status === "paid" || record.status === "paid, output rejected"
+      ? { ...record, chainVerified: true }
+      : record;
+    saveLedgerRecord(verifiedRecord);
+    response.status(201).json(verifiedRecord);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not save call record.";
+    if (error instanceof LedgerVerificationUnavailableError) {
+      response.status(503).json({ error: message });
+      return;
+    }
     if (message.includes("UNIQUE constraint failed: ledger.id")) {
       response.status(409).json({ error: "A call record with this id already exists." });
+      return;
+    }
+    if (message.includes("ledger_tx_hash_unique_idx")) {
+      response.status(409).json({ error: "This transaction is already recorded in the Marketplace ledger." });
       return;
     }
     console.error("Could not save call record.", message);
@@ -218,7 +239,12 @@ app.get("/api/ledger", (request, response) => {
     ? Math.min(Math.max(requestedLimit, 1), 500)
     : 100;
 
-  response.json(listLedgerRecords(limit));
+  const taskId = request.query.taskId;
+  if (taskId !== undefined && (typeof taskId !== "string" || taskId.length > 100)) {
+    response.status(400).json({ error: "taskId must be at most 100 characters." });
+    return;
+  }
+  response.json(listLedgerRecords(limit, typeof taskId === "string" ? taskId : undefined));
 });
 
 const server = useLocalHttp

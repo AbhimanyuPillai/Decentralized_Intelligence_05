@@ -24,6 +24,6 @@ Job summary also needs its own provider settings. Search and details work withou
 
 ## Configuration and prices
 
-Paid prices are 5,000 units for each scraper, 1,000 units for each data seller, and 10,000 units for each summary seller. Free local mode publishes them at zero and needs no wallet. Set the seller-specific `*_PAY_TO` variables before enabling payments. For summary services, set `BOOK_SUMMARY_API_URL`, `BOOK_SUMMARY_API_KEY`, `BOOK_SUMMARY_MODEL`, `JOB_SUMMARY_API_URL`, `JOB_SUMMARY_API_KEY`, and `JOB_SUMMARY_MODEL` as needed.
+Paid prices are 2,000 units for each scraper, 1,000 units for each data seller, and 10,000 units for each summary seller. Free local mode publishes them at zero and needs no wallet. Set the seller-specific `*_PAY_TO` variables before enabling payments. For summary services, set `BOOK_SUMMARY_API_URL`, `BOOK_SUMMARY_API_KEY`, `BOOK_SUMMARY_MODEL`, `JOB_SUMMARY_API_URL`, `JOB_SUMMARY_API_KEY`, and `JOB_SUMMARY_MODEL` as needed.
 
-The buyer can discover the exact live request and response schemas from `GET /api/registry`; no client should duplicate these schemas by hand. In this project, Scout currently reads the registry but does not yet call sellers or submit the resulting buyer ledger record.
+The buyer can discover the exact live request and response schemas from `GET /api/registry`; no client should duplicate these schemas by hand. Scout plans one or more seller calls, validates inputs and outputs, enforces the task budget, and submits each attempted call to the Marketplace ledger. Paid ledger records are accepted only after the Marketplace verifies the matching Base Sepolia USDC transfer.

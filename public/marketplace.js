@@ -88,18 +88,19 @@ function makeServiceCard(seller) {
   card.append(top);
 
   addText(card, "p", "service-description", seller.description);
-  if (seller.ready === false) addText(card, "p", "message error", "Configuration required before this service can accept requests.");
+  if (seller.ready === false) addText(card, "p", "message error", seller.readinessReason || "Configuration required before this service can accept requests.");
   const meta = document.createElement("div");
   meta.className = "service-meta";
   const reputation = seller.reputation;
   const success = reputation.successRatePercent === null
-    ? "No call history"
+    ? "No call history · neutral 100% rank baseline"
     : `${reputation.successRatePercent.toFixed(0)}% success`;
   const latency = reputation.medianLatencyMs === null
     ? "No latency data"
     : `${Math.round(reputation.medianLatencyMs)} ms median`;
   addText(meta, "span", "", success);
   addText(meta, "span", "", latency);
+  addText(meta, "span", "", `Ranking factor: ${success} ÷ ${seller.paymentRequired === false ? "free" : `${unitsToUsdc(seller.priceUnits)} USDC`}`);
   card.append(meta, makeSchemaDetails(seller));
   return card;
 }
@@ -146,16 +147,22 @@ function makeLedgerRow(record) {
   const row = document.createElement("tr");
   const date = new Date(record.timestamp).toLocaleString();
   makeLedgerCell(row, date);
+  makeLedgerCell(row, record.taskId || "Older call");
   makeLedgerCell(row, `${record.buyerAddress.slice(0, 6)}…${record.buyerAddress.slice(-4)}`);
   makeLedgerCell(row, record.serviceName);
   makeLedgerCell(row, `${unitsToUsdc(record.listedPriceUnits)} USDC`);
   makeLedgerCell(row, `${unitsToUsdc(record.askedPriceUnits)} USDC`);
   makeLedgerCell(row, `${unitsToUsdc(record.amountPaidUnits)} USDC`);
-  const status = makeLedgerCell(row, record.status);
+  const isPaidStatus = record.status === "paid" || record.status === "paid, output rejected";
+  const isUnverifiedPaid = isPaidStatus && record.chainVerified !== true;
+  const visibleStatus = isUnverifiedPaid
+    ? `${record.status} · not verified`
+    : record.status;
+  const status = makeLedgerCell(row, visibleStatus);
   status.innerHTML = "";
   const tag = document.createElement("span");
-  tag.className = `status-tag ${statusClass(record.status)}`;
-  tag.textContent = record.status;
+  tag.className = `status-tag ${isUnverifiedPaid ? "status-unverified-paid" : statusClass(record.status)}`;
+  tag.textContent = visibleStatus;
   status.append(tag);
   makeLedgerCell(row, record.reason || "—");
   makeLedgerCell(row, `${record.latencyMs} ms`);
@@ -184,7 +191,9 @@ async function loadLedger() {
       return;
     }
     for (const record of records) ledgerRows.append(makeLedgerRow(record));
-    showMessage(ledgerMessage, `${records.length} recent call${records.length === 1 ? "" : "s"}.`);
+    const paid = records.filter((record) => record.status === "paid" || record.status === "paid, output rejected");
+    const verifiedPaid = paid.filter((record) => record.chainVerified === true);
+    showMessage(ledgerMessage, `${records.length} recent call${records.length === 1 ? "" : "s"}. Verified spend in these records: ${unitsToUsdc(verifiedPaid.reduce((sum, record) => sum + BigInt(record.amountPaidUnits), 0n).toString())} USDC.`);
   } catch (error) {
     showMessage(ledgerMessage, error.message, "error");
   }
@@ -286,3 +295,8 @@ document.querySelector('[name="outputSchema"]').value = JSON.stringify({
 loadServices();
 loadLedger();
 loadRegistrationConfig();
+
+// Keep displayed seller reputation fresh while the marketplace tab is open.
+window.setInterval(() => {
+  if (!document.hidden && !document.querySelector("#services").hidden) loadServices();
+}, 10_000);

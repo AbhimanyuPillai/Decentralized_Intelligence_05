@@ -1,5 +1,7 @@
 import type { LedgerRecord, ServiceCategory } from "../types.js";
 import { findSeller } from "./registry.js";
+import { createPublicClient, decodeEventLog, http, parseAbiItem } from "viem";
+import { baseSepolia } from "viem/chains";
 
 const categories: ServiceCategory[] = ["scraping", "data", "inference"];
 const statuses: LedgerRecord["status"][] = [
@@ -10,6 +12,11 @@ const statuses: LedgerRecord["status"][] = [
   "refused",
   "failed and not charged"
 ];
+const transferEvent = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)");
+const rpcUrl = process.env.BASE_SEPOLIA_RPC_URL?.trim() || "https://sepolia.base.org";
+const chainClient = createPublicClient({ chain: baseSepolia, transport: http(rpcUrl, { timeout: 12_000 }) });
+
+export class LedgerVerificationUnavailableError extends Error {}
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -27,6 +34,9 @@ export function parseLedgerRecord(value: unknown): LedgerRecord {
 
   if (typeof record.id !== "string" || record.id.length === 0) {
     throw new Error("id must be a non-empty string.");
+  }
+  if (typeof record.taskId !== "string" || record.taskId.length === 0 || record.taskId.length > 100) {
+    throw new Error("taskId must be a non-empty string of at most 100 characters.");
   }
   if (typeof record.timestamp !== "string" || Number.isNaN(Date.parse(record.timestamp))) {
     throw new Error("timestamp must be a valid ISO date-time string.");
@@ -78,11 +88,17 @@ export function parseLedgerRecord(value: unknown): LedgerRecord {
     if (BigInt(record.amountPaidUnits) <= 0n || record.amountPaidUnits !== record.askedPriceUnits) {
       throw new Error("A settled call's paid amount must equal its asked amount and be greater than zero.");
     }
-    if (BigInt(record.askedPriceUnits) > BigInt(record.listedPriceUnits)) {
-      throw new Error("A settled call cannot exceed the registered listing price.");
+    if (record.askedPriceUnits !== seller.priceUnits || record.listedPriceUnits !== seller.priceUnits) {
+      throw new Error("A settled call must use the exact registered seller price.");
+    }
+    if (seller.paymentRequired !== true || seller.network !== "eip155:84532") {
+      throw new Error("A paid record requires a paid Base Sepolia seller listing.");
+    }
+    if (record.buyerAddress.toLowerCase() === seller.payTo.toLowerCase()) {
+      throw new Error("Buyer and seller payment addresses must be different.");
     }
 
-    txHash = record.txHash;
+    txHash = record.txHash.toLowerCase();
     explorerUrl = `https://sepolia.basescan.org/tx/${txHash}`;
   } else if (record.amountPaidUnits !== "0" || (record.txHash !== null && record.txHash !== undefined)) {
     throw new Error("An uncharged or unverified call must have amountPaidUnits 0 and no transaction hash.");
@@ -90,6 +106,7 @@ export function parseLedgerRecord(value: unknown): LedgerRecord {
 
   return {
     id: record.id,
+    taskId: record.taskId,
     timestamp: record.timestamp,
     buyerAddress: record.buyerAddress,
     sellerId: seller.id,
@@ -104,4 +121,49 @@ export function parseLedgerRecord(value: unknown): LedgerRecord {
     latencyMs: Number(record.latencyMs),
     ...(record.reason === undefined ? {} : { reason: record.reason })
   };
+}
+
+// A transaction hash counts as paid only if Base Sepolia shows the expected USDC transfer.
+export async function verifyPaidLedgerRecord(record: LedgerRecord): Promise<void> {
+  if (record.status !== "paid" && record.status !== "paid, output rejected") return;
+  const seller = findSeller(record.sellerId);
+  if (!seller) throw new Error("Seller is no longer registered.");
+
+  let receipt;
+  try {
+    const chainId = await chainClient.getChainId();
+    if (chainId !== 84532) throw new LedgerVerificationUnavailableError("The configured RPC endpoint is not connected to Base Sepolia.");
+    receipt = await chainClient.getTransactionReceipt({ hash: record.txHash as `0x${string}` });
+  } catch (error) {
+    if (error instanceof LedgerVerificationUnavailableError) throw error;
+    throw new LedgerVerificationUnavailableError("Could not verify the transaction receipt on Base Sepolia. Try again after the transaction is indexed.");
+  }
+  if (receipt.status !== "success") throw new Error("The payment transaction did not succeed.");
+
+  const transfers = receipt.logs.flatMap((log) => {
+    if (log.address.toLowerCase() !== seller.asset.toLowerCase()) return [];
+    try {
+      const decoded = importTransferLog(log);
+      return [decoded];
+    } catch {
+      return [];
+    }
+  });
+  const buyerTransfers = transfers.filter((transfer) => transfer.from.toLowerCase() === record.buyerAddress.toLowerCase());
+  if (
+    buyerTransfers.length !== 1 ||
+    buyerTransfers[0]?.to.toLowerCase() !== seller.payTo.toLowerCase() ||
+    buyerTransfers[0]?.value !== BigInt(record.amountPaidUnits)
+  ) {
+    throw new Error("The transaction must contain exactly one USDC transfer out of the buyer wallet, for the listed amount, to the registered seller.");
+  }
+}
+
+function importTransferLog(log: { topics: readonly `0x${string}`[]; data: `0x${string}` }) {
+  const decoded = decodeEventLog({
+    abi: [transferEvent],
+    data: log.data,
+    topics: log.topics as [`0x${string}`, ...`0x${string}`[]]
+  });
+  return decoded.args as { from: `0x${string}`; to: `0x${string}`; value: bigint };
 }

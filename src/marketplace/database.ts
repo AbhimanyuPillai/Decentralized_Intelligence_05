@@ -31,6 +31,11 @@ database.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS ledger_seller_id_idx ON ledger(seller_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS ledger_tx_hash_unique_idx
+    ON ledger (json_extract(record_json, '$.txHash'))
+    WHERE json_extract(record_json, '$.txHash') IS NOT NULL
+      AND json_extract(record_json, '$.chainVerified') = 1;
+  CREATE INDEX IF NOT EXISTS ledger_task_id_idx ON ledger (json_extract(record_json, '$.taskId'));
 `);
 
 const sellerColumns = database.pragma("table_info(sellers)") as Array<{ name: string }>;
@@ -63,6 +68,11 @@ const insertSeller = database.prepare(`
     registration_source = excluded.registration_source
 `);
 
+const insertWebsiteSeller = database.prepare(`
+  INSERT INTO sellers (id, listing_json, created_at, updated_at, is_listed, registration_source)
+  VALUES (@id, @listingJson, @now, @now, 1, 'website')
+`);
+
 const insertLedger = database.prepare(`
   INSERT INTO ledger (id, seller_id, status, latency_ms, record_json, created_at)
   VALUES (@id, @sellerId, @status, @latencyMs, @recordJson, @now)
@@ -74,12 +84,20 @@ const readLedger = database.prepare(`
   ORDER BY created_at DESC
   LIMIT ?
 `);
+const readTaskLedger = database.prepare(`
+  SELECT record_json
+  FROM ledger
+  WHERE json_extract(record_json, '$.taskId') = ?
+  ORDER BY created_at DESC
+  LIMIT ?
+`);
 
 export function saveSeller(listing: SellerListing, registrationSource: "website" | "built_in" = "website"): void {
-  insertSeller.run({
+  const statement = registrationSource === "built_in" ? insertSeller : insertWebsiteSeller;
+  statement.run({
     id: listing.id,
     listingJson: JSON.stringify(listing),
-    registrationSource,
+    ...(registrationSource === "built_in" ? { registrationSource } : {}),
     now: new Date().toISOString()
   });
 }
@@ -134,12 +152,33 @@ export function hideAutoSeededFreeListings(): number {
   return removeIds.length;
 }
 
+// A listing created in one payment mode must not silently remain usable in another.
+export function hideWebsiteListingsFromOtherPaymentMode(paymentsEnabled: boolean): number {
+  const expectedPaymentRequired = paymentsEnabled ? 1 : 0;
+  const result = database.prepare(`
+    UPDATE sellers
+    SET is_listed = 0
+    WHERE is_listed = 1
+      AND registration_source = 'website'
+      AND COALESCE(json_extract(listing_json, '$.paymentRequired'), -1) != ?
+  `).run(expectedPaymentRequired);
+  return Number(result.changes);
+}
+
 export function calculateReputation(sellerId: string): Reputation {
   const calls = database
-    .prepare("SELECT status, latency_ms FROM ledger WHERE seller_id = ?")
+    .prepare(`
+      SELECT status, latency_ms
+      FROM ledger
+      WHERE seller_id = ?
+        AND (
+          status IN ('paid', 'paid, output rejected')
+          AND json_extract(record_json, '$.chainVerified') = 1
+        )
+    `)
     .all(sellerId) as Array<{ status: string; latency_ms: number }>;
 
-  const successfulCalls = calls.filter((call) => call.status === "paid" || call.status === "completed free").length;
+  const successfulCalls = calls.filter((call) => call.status === "paid").length;
   const latencies = calls
     .map((call) => call.latency_ms)
     .sort((left, right) => left - right);
@@ -171,7 +210,7 @@ export function saveLedgerRecord(record: LedgerRecord): void {
   });
 }
 
-export function listLedgerRecords(limit = 100): LedgerRecord[] {
-  const rows = readLedger.all(limit) as Array<{ record_json: string }>;
+export function listLedgerRecords(limit = 100, taskId?: string): LedgerRecord[] {
+  const rows = (taskId ? readTaskLedger.all(taskId, limit) : readLedger.all(limit)) as Array<{ record_json: string }>;
   return rows.map((row) => JSON.parse(row.record_json) as LedgerRecord);
 }

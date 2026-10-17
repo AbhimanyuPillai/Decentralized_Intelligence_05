@@ -1,5 +1,5 @@
 {
-  "contractVersion": "1.0.0",
+  "contractVersion": "1.1.0",
   "description": "Shared application contract for the agent marketplace. x402 wire payloads and signatures must be handled by the official x402 v2 SDK, not hand-authored here.",
   "conventions": {
     "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
@@ -47,7 +47,20 @@
       },
       "priceUnits": {
         "type": "string",
-        "pattern": "^[1-9][0-9]*$"
+        "pattern": "^(0|[1-9][0-9]*)$"
+      },
+      "paymentRequired": {
+        "type": "boolean"
+      },
+      "ready": {
+        "type": "boolean"
+      },
+      "readinessReason": {
+        "type": "string"
+      },
+      "selectionScore": {
+        "type": "number",
+        "minimum": 0
       },
       "network": {
         "type": "string",
@@ -409,6 +422,11 @@
         "type": "string",
         "minLength": 1
       },
+      "taskId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
       "timestamp": {
         "type": "string",
         "format": "date-time"
@@ -452,6 +470,9 @@
         ],
         "pattern": "^0x[a-fA-F0-9]{64}$"
       },
+      "chainVerified": {
+        "type": "boolean"
+      },
       "explorerUrl": {
         "type": [
           "string",
@@ -480,6 +501,7 @@
     },
     "required": [
       "id",
+      "taskId",
       "timestamp",
       "buyerAddress",
       "sellerId",
@@ -494,9 +516,36 @@
       "latencyMs"
     ],
     "additionalProperties": false,
+    "allOf": [
+      {
+        "if": {
+          "properties": {
+            "status": {
+              "enum": [
+                "paid",
+                "paid, output rejected"
+              ]
+            }
+          },
+          "required": [
+            "status"
+          ]
+        },
+        "then": {
+          "properties": {
+            "chainVerified": {
+              "const": true
+            }
+          },
+          "required": [
+            "chainVerified"
+          ]
+        }
+      }
+    ],
     "statusInvariants": {
-      "paid": "amountPaidUnits > 0 and txHash/explorerUrl identify the real settlement.",
-      "paid, output rejected": "amountPaidUnits > 0 and txHash/explorerUrl identify the real settlement.",
+      "paid": "amountPaidUnits > 0, txHash/explorerUrl identify the real settlement, and chainVerified is true after Marketplace receipt and USDC transfer verification.",
+      "paid, output rejected": "amountPaidUnits > 0, txHash/explorerUrl identify the real settlement, and chainVerified is true after Marketplace receipt and USDC transfer verification.",
       "completed free": "amountPaidUnits is 0 and txHash/explorerUrl are null; only valid for a free test-mode listing.",
       "settlement unknown": "amountPaidUnits is 0 and txHash/explorerUrl are null; a payment was signed but settlement could not be verified, so the call must not be retried automatically.",
       "refused": "amountPaidUnits is 0 and txHash/explorerUrl are null.",

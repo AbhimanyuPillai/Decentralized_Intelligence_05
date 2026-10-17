@@ -16,6 +16,8 @@ export interface SellerListing {
   priceUnits: string;
   paymentRequired?: boolean;
   ready?: boolean;
+  readinessReason?: string;
+  selectionScore?: number;
   network: string;
   asset: string;
   payTo: string;
@@ -38,6 +40,7 @@ export type CallStatus =
 
 export interface LedgerRecord {
   id: string;
+  taskId: string;
   timestamp: string;
   buyerAddress: string;
   sellerId: string;
@@ -47,6 +50,7 @@ export interface LedgerRecord {
   askedPriceUnits: string;
   amountPaidUnits: string;
   txHash: string | null;
+  chainVerified?: boolean;
   explorerUrl: string | null;
   status: CallStatus;
   latencyMs: number;

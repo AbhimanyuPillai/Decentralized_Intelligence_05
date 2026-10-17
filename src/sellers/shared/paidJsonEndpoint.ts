@@ -49,6 +49,11 @@ export function createSellerManifest(
   const paymentsEnabled = process.env.SELLER_PAYMENTS_ENABLED === "true";
   const serviceReady = definition.isReady?.() ?? true;
   const ready = serviceReady && (!paymentsEnabled || isWalletAddress(payTo));
+  const readinessReason = !serviceReady
+    ? `${definition.name} service configuration is incomplete.`
+    : paymentsEnabled && !isWalletAddress(payTo)
+      ? `Set ${definition.payToEnv} or SELLER_PRIVATE_KEY to enable paid calls.`
+      : undefined;
 
   return {
     id: definition.id,
@@ -59,9 +64,10 @@ export function createSellerManifest(
     priceUnits: paymentsEnabled ? definition.priceUnits : "0",
     paymentRequired: paymentsEnabled,
     ready,
+    ...(readinessReason ? { readinessReason } : {}),
     network: BASE_SEPOLIA,
     asset: BASE_SEPOLIA_USDC,
-    payTo: paymentsEnabled ? payTo ?? "" : "0x0000000000000000000000000000000000000001",
+    payTo: paymentsEnabled && payTo ? payTo : "0x0000000000000000000000000000000000000001",
     inputSchema: definition.inputSchema,
     outputSchema: definition.outputSchema,
     reputation: { totalCalls: 0, successfulCalls: 0, successRatePercent: null, medianLatencyMs: null }

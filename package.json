@@ -11,7 +11,8 @@
     "predev:buyer": "node scripts/setup-local-tls.mjs",
     "dev:buyer": "tsx watch src/buyer-server.ts",
     "start": "node scripts/dev.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/marketplace.test.ts"
   },
   "dependencies": {
     "@x402/core": "^2.28.0",

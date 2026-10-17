@@ -87,7 +87,7 @@ function makeCallReport(step) {
 
 function showReport(report) {
   runReport.hidden = false;
-  document.querySelector("#task-report").textContent = `Task: ${report.task}`;
+  document.querySelector("#task-report").textContent = `Task ID: ${report.taskId} · Task: ${report.task}`;
   document.querySelector(".budget-report").textContent = `Estimated: ${unitsToUsdc(report.estimatedUnits)} USDC · Spent: ${unitsToUsdc(report.spentUnits)} USDC · Maximum: ${unitsToUsdc(report.budgetUnits)} USDC · Max simultaneous calls: ${report.maxConcurrency}`;
   document.querySelector("#final-answer").textContent = report.finalAnswer;
   const resultTag = document.querySelector("#run-result-tag");
