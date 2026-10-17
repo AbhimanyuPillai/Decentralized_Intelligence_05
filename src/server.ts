@@ -22,6 +22,7 @@ import { mountDemoReceiptReplay, demoReceiptFirstDefinition, demoReceiptSecondDe
 import { mountDemoComputeFailure, demoComputeFailureDefinition } from "./sellers/demo-compute-failure/routes.js";
 import { createSellerManifest } from "./sellers/shared/paidJsonEndpoint.js";
 import { hideAutoSeededFreeListings, hideWebsiteListingsFromOtherPaymentMode } from "./marketplace/database.js";
+import { escrowAddress, escrowEnabled, escrowHoldSeconds } from "./marketplace/escrowConfig.js";
 import {
   findSeller,
   registerSeller,
@@ -139,7 +140,10 @@ if (process.env.NODE_ENV !== "production" || publicBaseUrl) {
 }
 
 app.get("/api/config", (_request, response) => {
-  response.json({ paymentsEnabled: process.env.SELLER_PAYMENTS_ENABLED === "true" });
+  response.json({
+    paymentsEnabled: process.env.SELLER_PAYMENTS_ENABLED === "true",
+    escrow: escrowEnabled() ? { address: escrowAddress() ?? null, holdSeconds: escrowHoldSeconds() } : null
+  });
 });
 app.use((request, response, next) => {
   if (request.path === "/ledger.html" || request.path === "/ledger.js") {
@@ -245,4 +249,7 @@ const server = useLocalHttp
 
 server.listen(port, host, () => {
   console.log(`Marketplace ${protocol.toUpperCase()} listening on ${host}:${port}`);
+  if (escrowEnabled()) {
+    console.info(`Escrow is on: buyers pay ${escrowAddress() ?? "an unconfigured escrow wallet"}; holds release after ${escrowHoldSeconds()} s without a dispute.`);
+  }
 });

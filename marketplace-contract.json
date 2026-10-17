@@ -90,6 +90,16 @@
         "type": "string",
         "pattern": "^0x[a-fA-F0-9]{40}$"
       },
+      "escrow": {
+        "type": "object",
+        "description": "Present when buyers pay the marketplace escrow wallet. payTo is then the escrow wallet; the escrow releases to sellerPayTo on acceptance or after holdSeconds, or refunds the buyer when a dispute is upheld.",
+        "properties": {
+          "sellerPayTo": { "type": "string", "pattern": "^0x[a-fA-F0-9]{40}$" },
+          "holdSeconds": { "type": "integer", "minimum": 10, "maximum": 86400 }
+        },
+        "required": ["sellerPayTo", "holdSeconds"],
+        "additionalProperties": false
+      },
       "inputSchema": {
         "type": "object"
       },
@@ -167,7 +177,8 @@
       "priceUnits": "2000",
       "network": "eip155:84532",
       "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-      "payTo": "0xD0a2c0d5886B5B49CA39116816613a007C246F8b",
+      "payTo": "0xA360194De2Ff897C0fE441890FdC7DD045DE49b2",
+      "escrow": { "sellerPayTo": "0xD0a2c0d5886B5B49CA39116816613a007C246F8b", "holdSeconds": 600 },
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -250,7 +261,8 @@
       "priceUnits": "1000",
       "network": "eip155:84532",
       "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-      "payTo": "0xD0a2c0d5886B5B49CA39116816613a007C246F8b",
+      "payTo": "0xA360194De2Ff897C0fE441890FdC7DD045DE49b2",
+      "escrow": { "sellerPayTo": "0xD0a2c0d5886B5B49CA39116816613a007C246F8b", "holdSeconds": 600 },
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -320,7 +332,8 @@
       "priceUnits": "10000",
       "network": "eip155:84532",
       "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-      "payTo": "0xD0a2c0d5886B5B49CA39116816613a007C246F8b",
+      "payTo": "0xA360194De2Ff897C0fE441890FdC7DD045DE49b2",
+      "escrow": { "sellerPayTo": "0xD0a2c0d5886B5B49CA39116816613a007C246F8b", "holdSeconds": 600 },
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -604,6 +617,7 @@
       "The asked asset matches the seller listing and configured asset.",
       "The asked payTo address matches the seller listing payTo address, case-insensitively."
     ],
+    "escrow": "When a listing has escrow terms, its payTo is the marketplace escrow wallet (0xA360194De2Ff897C0fE441890FdC7DD045DE49b2) and buyers pay that wallet. The escrow releases the payment to escrow.sellerPayTo when the buyer accepts or holdSeconds pass without a dispute, and refunds the buyer when a dispute is upheld. Buyers accept or dispute with a verdict signed by the paying wallet.",
     "budgetReservationRule": "Atomically require spentUnits + reservedUnits + callPriceUnits <= budgetUnits before starting a call. On settlement, move the reservation to spent; on confirmed failure without settlement, release it.",
     "replayRule": "Consume each signed authorization at most once. Use atomic persistent/shared idempotency and replay state; an in-memory set alone is insufficient."
   },

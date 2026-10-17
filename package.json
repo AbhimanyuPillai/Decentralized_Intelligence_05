@@ -14,7 +14,7 @@
     "dev:ledger": "tsx watch src/ledger-server.ts",
     "start": "node scripts/dev.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test tests/marketplace.test.ts tests/buyer-budget.test.ts tests/seller-replay.test.ts"
+    "test": "node --import tsx --test tests/marketplace.test.ts tests/buyer-budget.test.ts tests/seller-replay.test.ts tests/escrow.test.ts"
   },
   "dependencies": {
     "@x402/core": "^2.28.0",

@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { LedgerRecord, Reputation, SellerListing, SellerTrustStatus } from "../types.js";
+import type { EscrowHold, LedgerRecord, Reputation, SellerListing, SellerTrustStatus } from "../types.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const configuredDatabasePath = process.env.MARKETPLACE_DATABASE_PATH?.trim();
@@ -37,6 +37,16 @@ database.exec(`
     WHERE json_extract(record_json, '$.txHash') IS NOT NULL
       AND json_extract(record_json, '$.chainVerified') = 1;
   CREATE INDEX IF NOT EXISTS ledger_task_id_idx ON ledger (json_extract(record_json, '$.taskId'));
+
+  CREATE TABLE IF NOT EXISTS escrow (
+    record_id TEXT PRIMARY KEY REFERENCES ledger(id),
+    task_id TEXT NOT NULL,
+    state TEXT NOT NULL,
+    release_after TEXT NOT NULL,
+    hold_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS escrow_state_idx ON escrow (state, release_after);
 `);
 
 const ledgerColumns = database.pragma("table_info(ledger)") as Array<{ name: string }>;
@@ -176,16 +186,18 @@ export function hideWebsiteListingsFromOtherPaymentMode(paymentsEnabled: boolean
 
 export function calculateReputation(sellerId: string): Reputation {
   const rows = database.prepare(`
-    SELECT status, latency_ms, record_json, scout_trusted
+    SELECT ledger.status, ledger.latency_ms, ledger.record_json, ledger.scout_trusted, escrow.state AS escrow_state
     FROM ledger
-    WHERE seller_id = ?
-  `).all(sellerId) as Array<{ status: string; latency_ms: number; record_json: string; scout_trusted: number }>;
+    LEFT JOIN escrow ON escrow.record_id = ledger.id
+    WHERE ledger.seller_id = ?
+  `).all(sellerId) as Array<{ status: string; latency_ms: number; record_json: string; scout_trusted: number; escrow_state: string | null }>;
   // Only authenticated Scout reports include its output-schema validation result.
   const calls = rows.filter((row) => row.scout_trusted === 1);
-  const successfulCalls = calls.filter((call) =>
+  // A call refunded through an upheld escrow dispute counts as a failure for the seller.
+  const successfulCalls = calls.filter((call) => call.escrow_state !== "refunded" && (
     (call.status === "paid" && JSON.parse(call.record_json).chainVerified === true) ||
     (call.status === "completed free" && call.scout_trusted === 1)
-  ).length;
+  )).length;
   const availableCalls = calls.filter((call) => {
     const record = JSON.parse(call.record_json) as LedgerRecord;
     return record.sellerResponded === true || record.status === "paid" || record.status === "paid, output rejected";
@@ -257,4 +269,54 @@ export function reinstateSellerAfterReview(sellerId: string): boolean {
 export function listLedgerRecords(limit = 100, taskId?: string): LedgerRecord[] {
   const rows = (taskId ? readTaskLedger.all(taskId, limit) : readLedger.all(limit)) as Array<{ record_json: string }>;
   return rows.map((row) => JSON.parse(row.record_json) as LedgerRecord);
+}
+
+const insertEscrow = database.prepare(`
+  INSERT INTO escrow (record_id, task_id, state, release_after, hold_json, updated_at)
+  VALUES (@recordId, @taskId, @state, @releaseAfter, @holdJson, @now)
+`);
+const updateEscrow = database.prepare(`
+  UPDATE escrow SET state = @state, release_after = @releaseAfter, hold_json = @holdJson, updated_at = @now
+  WHERE record_id = @recordId
+`);
+const readEscrow = database.prepare("SELECT hold_json FROM escrow WHERE record_id = ?");
+const readDueEscrow = database.prepare(`
+  SELECT hold_json FROM escrow WHERE state = 'held' AND release_after <= ? ORDER BY release_after LIMIT 50
+`);
+
+function escrowParameters(hold: EscrowHold) {
+  return {
+    recordId: hold.recordId,
+    taskId: hold.taskId,
+    state: hold.state,
+    releaseAfter: hold.releaseAfter,
+    holdJson: JSON.stringify(hold),
+    now: new Date().toISOString()
+  };
+}
+
+export function saveEscrowHold(hold: EscrowHold): void {
+  insertEscrow.run(escrowParameters(hold));
+}
+
+export function updateEscrowHold(hold: EscrowHold): void {
+  updateEscrow.run(escrowParameters(hold));
+}
+
+export function getEscrowHold(recordId: string): EscrowHold | undefined {
+  const row = readEscrow.get(recordId) as { hold_json: string } | undefined;
+  return row ? (JSON.parse(row.hold_json) as EscrowHold) : undefined;
+}
+
+export function listDueEscrowHolds(nowIso: string): EscrowHold[] {
+  return (readDueEscrow.all(nowIso) as Array<{ hold_json: string }>).map((row) => JSON.parse(row.hold_json) as EscrowHold);
+}
+
+export function listEscrowHolds(recordIds: string[]): Map<string, EscrowHold> {
+  const holds = new Map<string, EscrowHold>();
+  for (const recordId of recordIds) {
+    const hold = getEscrowHold(recordId);
+    if (hold) holds.set(recordId, hold);
+  }
+  return holds;
 }

@@ -84,6 +84,15 @@ tbody tr:last-child td { border-bottom: 0; }
 .status-unverified-paid, .status-settlement-unknown { background: #fff1d6; color: #8a4b08; }
 .status-refused, .status-failed-and-not-charged, .status-paid-output-rejected { background: #fff1f0; color: #a32b22; }
 td a { color: var(--accent); }
+.escrow-cell { white-space: normal; min-width: 220px; max-width: 320px; }
+.escrow-note { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.escrow-note.error { color: #a32b22; }
+.escrow-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.button-small { padding: 4px 10px; font-size: 12px; }
+.escrow-held, .escrow-needs-review, .escrow-releasing, .escrow-refunding { background: #fff1d6; color: #8a4b08; }
+.escrow-released { background: #e4f7ec; color: #17663a; }
+.escrow-refunded { background: #e8f0ff; color: #2849a8; }
+.escrow-transfer-failed { background: #fff1f0; color: #a32b22; }
 footer { padding: 24px; border-top: 1px solid var(--line); color: var(--muted); text-align: center; font-size: 12px; }
 @media (max-width: 700px) {
   .topbar { flex-wrap: wrap; gap: 12px; padding: 14px 18px; }

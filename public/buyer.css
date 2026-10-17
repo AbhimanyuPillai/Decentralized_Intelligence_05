@@ -62,3 +62,9 @@
   .budget-field, .budget-input-wrap input { width: 100%; }
   .report-heading, .call-report-heading { align-items: flex-start; }
 }
+.escrow-line { margin: 0; padding: 10px 12px; border-radius: 10px; background: #f8f9fc; font-size: 13px; line-height: 1.45; }
+.escrow-line p { margin: 6px 0 0; color: #475467; }
+.escrow-held, .escrow-needs-review, .escrow-releasing, .escrow-refunding { background: #fff1d6; color: #8a4b08; }
+.escrow-released { background: #e4f7ec; color: #17663a; }
+.escrow-refunded { background: #e8f0ff; color: #2849a8; }
+.escrow-transfer-failed { background: #fff1f0; color: #a32b22; }

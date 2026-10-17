@@ -23,6 +23,15 @@ listingProperties.trustStatus = { type: "string", enum: ["unproven", "active", "
 listingProperties.demoScamType = { type: "string", enum: ["price_mismatch", "recipient_mismatch"] };
 listingProperties.demoReplayRole = { type: "string", enum: ["first", "second"] };
 listingProperties.demoFailureType = { type: "string", enum: ["compute_error"] };
+(listingProperties as Record<string, unknown>).escrow = {
+  type: "object",
+  properties: {
+    sellerPayTo: { type: "string", pattern: "^0x[a-fA-F0-9]{40}$" },
+    holdSeconds: { type: "integer", minimum: 10, maximum: 86400 }
+  },
+  required: ["sellerPayTo", "holdSeconds"],
+  additionalProperties: false
+};
 const validateListing = ajv.compile(listingSchema);
 
 function withCurrentReputation(listing: SellerListing): SellerListing {
@@ -114,6 +123,8 @@ export function registerSeller(input: SellerRegistration, registrationSource: "w
     ...(registrationSource === "built_in" && demoFailureType ? { demoFailureType } : {}),
     reputation: calculateReputation(input.id)
   } as SellerListing;
+  // Only built-in sellers run behind the marketplace escrow; website listings are paid directly.
+  if (registrationSource !== "built_in") delete listing.escrow;
 
   if (!validateListing(listing)) {
     const details = ajv.errorsText(validateListing.errors, { separator: "; " });

@@ -54,6 +54,38 @@ function statusClass(status) {
   return `status-${String(status).toLowerCase().replaceAll(" ", "-").replaceAll(",", "")}`;
 }
 
+const escrowLabels = {
+  held: "Held in escrow",
+  "needs review": "Disputed, waiting for a human reviewer",
+  releasing: "Releasing to seller…",
+  refunding: "Refunding…",
+  released: "Released to seller",
+  refunded: "Refunded to buyer",
+  "transfer failed": "Escrow transfer failed"
+};
+
+// What happened to this call's payment inside the marketplace escrow.
+function makeEscrowSummary(hold) {
+  const box = document.createElement("div");
+  box.className = "escrow-line";
+  const label = document.createElement("strong");
+  label.textContent = "Escrow: ";
+  box.append(label);
+  addText(box, "span", `status-tag escrow-${hold.state.replaceAll(" ", "-")}`, escrowLabels[hold.state] ?? hold.state);
+  if (hold.dispute) addText(box, "p", "", `Scout disputed: ${hold.dispute.reason}`);
+  if (hold.decision) addText(box, "p", "", `Decided by ${hold.decision.decidedBy}: ${hold.decision.reason}`);
+  else if (hold.reviewNote) addText(box, "p", "", hold.reviewNote);
+  if (hold.transferExplorerUrl) {
+    const link = document.createElement("a");
+    link.href = hold.transferExplorerUrl;
+    link.target = "_blank";
+    link.rel = "noreferrer";
+    link.textContent = hold.state === "refunded" ? "View refund transaction" : "View release transaction";
+    box.append(link);
+  }
+  return box;
+}
+
 function makeCallReport(step) {
   const card = document.createElement("article");
   card.className = "call-report";
@@ -95,6 +127,8 @@ function makeCallReport(step) {
     card.append(link);
   }
   if (step.reason) addText(card, "p", "message error", step.reason);
+  if (step.escrow) card.append(makeEscrowSummary(step.escrow));
+  if (step.escrowNote) addText(card, "p", "escrow-line", step.escrowNote);
 
   const details = document.createElement("details");
   addText(details, "summary", "", "Show seller input and output");

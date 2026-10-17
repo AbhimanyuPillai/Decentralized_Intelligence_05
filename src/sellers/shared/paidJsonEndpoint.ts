@@ -9,6 +9,7 @@ import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { privateKeyToAccount } from "viem/accounts";
 import { claimPayment, fingerprintPayment, finishPayment } from "./replayStore.js";
 import type { DemoFailureType } from "../../types.js";
+import { escrowAddress, escrowEnabled, escrowHoldSeconds, escrowWalletProblem } from "../../marketplace/escrowConfig.js";
 
 export const BASE_SEPOLIA = "eip155:84532" as const;
 export const BASE_SEPOLIA_USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
@@ -49,22 +50,42 @@ export interface SellerListingDefinition {
   handle: (input: unknown, request?: Request) => Promise<unknown>;
 }
 
+// Where the buyer's x402 payment goes. With escrow on, buyers pay the marketplace escrow
+// wallet, and the escrow later releases the money to sellerPayTo or refunds the buyer.
+function paymentTargets(definition: SellerListingDefinition) {
+  const sellerPayTo = getSellerPayTo(definition.payToEnv);
+  const sellerProblem = isWalletAddress(sellerPayTo)
+    ? undefined
+    : `Set ${definition.payToEnv} or SELLER_PRIVATE_KEY to enable paid calls.`;
+  if (!escrowEnabled()) {
+    return { payTo: sellerPayTo, sellerPayTo, escrow: false, walletProblem: sellerProblem };
+  }
+  const escrowTo = escrowAddress();
+  const walletProblem = sellerProblem ?? (!isWalletAddress(escrowTo)
+    ? escrowWalletProblem() ?? "Set ESCROW_PRIVATE_KEY to the marketplace escrow wallet to enable escrowed paid calls."
+    : escrowTo.toLowerCase() === sellerPayTo!.toLowerCase()
+      ? "The escrow wallet must differ from the seller's own wallet."
+      : undefined);
+  return { payTo: escrowTo, sellerPayTo, escrow: true, walletProblem };
+}
+
 export function createSellerManifest(
   definition: SellerListingDefinition,
   endpointUrl: string
 ) {
-  const payTo = getSellerPayTo(definition.payToEnv);
+  const targets = paymentTargets(definition);
+  const payTo = targets.payTo;
   const paymentsEnabled = process.env.SELLER_PAYMENTS_ENABLED === "true";
   const serviceReady = definition.isReady?.() ?? true;
-  const ready = serviceReady && (!paymentsEnabled || isWalletAddress(payTo));
+  const ready = serviceReady && (!paymentsEnabled || !targets.walletProblem);
   const readinessReason = !serviceReady
     ? definition.demoScamType
       ? "Demo scam sellers require paid mode so Scout can inspect the deliberately mismatched payment challenge."
       : definition.demoFailureType
         ? "The seller failure demo requires paid mode."
       : `${definition.name} service configuration is incomplete.`
-    : paymentsEnabled && !isWalletAddress(payTo)
-      ? `Set ${definition.payToEnv} or SELLER_PRIVATE_KEY to enable paid calls.`
+    : paymentsEnabled
+      ? targets.walletProblem
       : undefined;
 
   return {
@@ -85,7 +106,15 @@ export function createSellerManifest(
     ...(definition.demoFailureType ? { demoFailureType: definition.demoFailureType } : {}),
     inputSchema: definition.inputSchema,
     outputSchema: definition.outputSchema,
-    reputation: { totalCalls: 0, successfulCalls: 0, successRatePercent: null, medianLatencyMs: null, availabilityPercent: null, mismatchCount: 0 }
+    reputation: { totalCalls: 0, successfulCalls: 0, successRatePercent: null, medianLatencyMs: null, availabilityPercent: null, mismatchCount: 0 },
+    ...(targets.escrow
+      ? {
+        escrow: {
+          sellerPayTo: paymentsEnabled && targets.sellerPayTo ? targets.sellerPayTo : "0x0000000000000000000000000000000000000001",
+          holdSeconds: escrowHoldSeconds()
+        }
+      }
+      : {})
   };
 }
 
@@ -133,10 +162,11 @@ export function mountPaidJsonEndpoint(app: Express, definition: SellerListingDef
   const validateInput = ajv.compile(definition.inputSchema);
   const validateOutput = ajv.compile(definition.outputSchema);
   const manifestPath = `/sellers/${definition.id}/manifest`;
-  const payTo = getSellerPayTo(definition.payToEnv);
+  const targets = paymentTargets(definition);
+  const payTo = targets.payTo;
   const paymentsEnabled = process.env.SELLER_PAYMENTS_ENABLED === "true";
   const serviceReady = definition.isReady?.() ?? true;
-  const ready = serviceReady && (!paymentsEnabled || isWalletAddress(payTo));
+  const ready = serviceReady && (!paymentsEnabled || !targets.walletProblem);
   const publicBase = process.env.PUBLIC_BASE_URL?.replace(/\/+$/, "");
   let endpointBase = "";
   try {

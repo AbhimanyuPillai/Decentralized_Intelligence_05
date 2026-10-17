@@ -5,7 +5,9 @@ import { createServer as createHttpServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { listLedgerRecords, saveLedgerRecord } from "./marketplace/database.js";
+import { getEscrowHold, listEscrowHolds, listLedgerRecords, saveLedgerRecord } from "./marketplace/database.js";
+import { EscrowError, openEscrowHold, parseVerdict, resolveByHuman, startEscrowSweeper, submitVerdict } from "./marketplace/escrow.js";
+import { escrowAddress, escrowEnabled, escrowHoldSeconds } from "./marketplace/escrowConfig.js";
 import { LedgerVerificationUnavailableError, parseLedgerRecord, verifyPaidLedgerRecord } from "./marketplace/ledger.js";
 import { loadLocalEnvironment, readLocalTlsFiles } from "./config.js";
 
@@ -63,7 +65,10 @@ app.get("/health", (_request, response) => {
 app.get("/api/config", (_request, response) => {
   const marketplacePort = process.env.MARKETPLACE_PORT ?? "3000";
   const marketplaceBaseUrl = process.env.MARKETPLACE_BASE_URL?.trim() || `${protocol}://localhost:${marketplacePort}`;
-  response.json({ marketplaceBaseUrl });
+  response.json({
+    marketplaceBaseUrl,
+    escrow: escrowEnabled() ? { address: escrowAddress() ?? null, holdSeconds: escrowHoldSeconds() } : null
+  });
 });
 
 app.get("/", (_request, response) => response.sendFile(path.join(publicDirectory, "ledger.html")));
@@ -90,7 +95,14 @@ app.post("/api/ledger", async (request, response) => {
       ? { ...record, chainVerified: true }
       : record;
     saveLedgerRecord(verifiedRecord, scoutTrusted);
-    response.status(201).json(verifiedRecord);
+    // Calls to escrowed sellers start out held; the buyer's verdict or the hold timer settles them.
+    let escrow;
+    try {
+      escrow = openEscrowHold(verifiedRecord);
+    } catch (error) {
+      console.error("Could not open escrow hold.", error instanceof Error ? error.message : "unknown error");
+    }
+    response.status(201).json(escrow ? { ...verifiedRecord, escrow } : verifiedRecord);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not save call record.";
     if (error instanceof LedgerVerificationUnavailableError) {
@@ -118,10 +130,76 @@ app.get("/api/ledger", (request, response) => {
     response.status(400).json({ error: "taskId must be at most 100 characters." });
     return;
   }
-  response.json(listLedgerRecords(limit, typeof taskId === "string" ? taskId : undefined));
+  const records = listLedgerRecords(limit, typeof taskId === "string" ? taskId : undefined);
+  const holds = listEscrowHolds(records.map((record) => record.id));
+  response.json(records.map((record) => {
+    const escrow = holds.get(record.id);
+    return escrow ? { ...record, escrow } : record;
+  }));
+});
+
+function sendEscrowError(response: express.Response, error: unknown): void {
+  if (error instanceof EscrowError) {
+    response.status(error.status).json({ error: error.message });
+    return;
+  }
+  console.error("Escrow request failed.", error instanceof Error ? error.message : "unknown error");
+  response.status(500).json({ error: "Escrow request failed." });
+}
+
+// Without ESCROW_ADMIN_TOKEN, only someone on this computer may act as the human reviewer.
+function isEscrowReviewer(request: express.Request): boolean {
+  const token = process.env.ESCROW_ADMIN_TOKEN?.trim();
+  if (token) return matchesSecret(token, request.get("x-admin-token")?.trim());
+  return ["::1", "127.0.0.1", "::ffff:127.0.0.1"].includes(request.socket.remoteAddress ?? "");
+}
+
+app.get("/api/escrow/:recordId", (request, response) => {
+  const hold = getEscrowHold(request.params.recordId);
+  if (!hold) {
+    response.status(404).json({ error: "No escrow hold exists for this call." });
+    return;
+  }
+  response.json(hold);
+});
+
+// The buyer that paid accepts or disputes the result (signed by its wallet in paid mode).
+app.post("/api/escrow/:recordId/verdict", async (request, response) => {
+  try {
+    response.json(await submitVerdict(request.params.recordId, parseVerdict(request.body)));
+  } catch (error) {
+    sendEscrowError(response, error);
+  }
+});
+
+// A human reviewer settles a dispute the rules and AI judge could not, or retries a failed transfer.
+app.post("/api/escrow/:recordId/resolve", async (request, response) => {
+  if (!isEscrowReviewer(request)) {
+    response.status(403).json({ error: "Only the marketplace reviewer can resolve disputes." });
+    return;
+  }
+  const outcome = request.body?.outcome;
+  const note = request.body?.note;
+  if (outcome !== "release" && outcome !== "refund") {
+    response.status(400).json({ error: "outcome must be release or refund." });
+    return;
+  }
+  if (note !== undefined && (typeof note !== "string" || note.length > 500)) {
+    response.status(400).json({ error: "note must be a string of at most 500 characters." });
+    return;
+  }
+  try {
+    response.json(await resolveByHuman(request.params.recordId, outcome, note));
+  } catch (error) {
+    sendEscrowError(response, error);
+  }
 });
 
 const server = useLocalHttp ? createHttpServer(app) : createHttpsServer(readLocalTlsFiles(), app);
 server.listen(port, host, () => {
   console.log(`Marketplace ledger ${protocol.toUpperCase()} listening on ${host}:${port}`);
+  if (escrowEnabled()) {
+    console.info(`Escrow is on: buyers pay ${escrowAddress() ?? "an unconfigured escrow wallet"}; holds release after ${escrowHoldSeconds()} s without a dispute.`);
+  }
+  startEscrowSweeper();
 });

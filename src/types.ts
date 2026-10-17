@@ -44,6 +44,48 @@ export interface SellerListing {
   inputSchema: Record<string, unknown>;
   outputSchema: Record<string, unknown>;
   reputation: Reputation;
+  /** Present when buyers pay the marketplace escrow wallet instead of the seller directly. */
+  escrow?: EscrowTerms;
+}
+
+export interface EscrowTerms {
+  /** The seller wallet that receives the money once the escrow releases it. */
+  sellerPayTo: string;
+  /** How long the money is held before it is released automatically if nobody disputes. */
+  holdSeconds: number;
+}
+
+export type EscrowState =
+  | "held"
+  | "needs review"
+  | "releasing"
+  | "refunding"
+  | "released"
+  | "refunded"
+  | "transfer failed";
+
+export type EscrowDecider = "buyer accepted" | "hold expired" | "automatic rule" | "AI judge" | "human reviewer";
+
+export interface EscrowHold {
+  recordId: string;
+  taskId: string;
+  sellerId: string;
+  serviceName: string;
+  buyerAddress: string;
+  sellerPayTo: string;
+  asset: string;
+  amountUnits: string;
+  paymentTxHash: string | null;
+  state: EscrowState;
+  createdAt: string;
+  releaseAfter: string;
+  dispute?: { reason: string; at: string };
+  /** Why a disputed hold is waiting for a human reviewer. */
+  reviewNote?: string;
+  decision?: { outcome: "release" | "refund"; decidedBy: EscrowDecider; reason: string; at: string };
+  transferTxHash?: string;
+  transferExplorerUrl?: string;
+  transferError?: string;
 }
 
 export interface SellerRegistration extends Omit<SellerListing, "reputation" | "trustStatus" | "rankingFactors" | "selectionScore"> {
@@ -83,4 +125,6 @@ export interface LedgerRecord {
     asset: string;
     payTo: string;
   };
+  /** Added to ledger API responses when the call's payment went through escrow. */
+  escrow?: EscrowHold;
 }
