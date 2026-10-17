@@ -2,6 +2,7 @@ import { spawn, spawnSync } from "node:child_process";
 import http from "node:http";
 import https from "node:https";
 import { readFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 
 try {
   for (const line of readFileSync(new URL("../.env", import.meta.url), "utf8").split(/\r?\n/)) {
@@ -13,8 +14,12 @@ try {
   // The two services can also receive their settings from the environment.
 }
 
+// Scout and the separate ledger service share this private report token.
+process.env.SCOUT_MARKETPLACE_REPORT_TOKEN ||= randomBytes(32).toString("hex");
+
 const useLocalHttp = process.env.NODE_ENV !== "production" && process.env.SELLER_PAYMENTS_ENABLED !== "true";
 const protocol = useLocalHttp ? "http" : "https";
+const localHost = useLocalHttp ? "[::1]" : "127.0.0.1";
 const buyerPort = process.env.BUYER_PORT ?? "3001";
 const expectedBuyerOrigin = useLocalHttp
   ? `http://localhost:${buyerPort}`
@@ -29,7 +34,8 @@ if (!useLocalHttp) {
 
 const services = [
   { name: "Marketplace", entry: "src/server.ts", portName: "MARKETPLACE_PORT", fallbackPort: "3000" },
-  { name: "Scout buyer", entry: "src/buyer-server.ts", portName: "BUYER_PORT", fallbackPort: "3001" }
+  { name: "Scout buyer", entry: "src/buyer-server.ts", portName: "BUYER_PORT", fallbackPort: "3001" },
+  { name: "Marketplace ledger", entry: "src/ledger-server.ts", portName: "LEDGER_PORT", fallbackPort: "3002" }
 ];
 const children = services.map((service) => {
   const port = process.env[service.portName] ?? service.fallbackPort;
@@ -52,6 +58,7 @@ const children = services.map((service) => {
 
 let stopping = false;
 const marketplacePort = process.env.MARKETPLACE_PORT ?? "3000";
+const ledgerPort = process.env.LEDGER_PORT ?? "3002";
 function requestUrl(url, headers = {}) {
   const transport = url.startsWith("https:") ? https : http;
   return new Promise((resolve, reject) => {
@@ -73,7 +80,7 @@ function waitForHealth(port, name, attempts = 30) {
   return new Promise((resolve, reject) => {
     let remaining = attempts;
     const tryRequest = () => {
-      requestUrl(`${protocol}://localhost:${port}/health`).then((response) => {
+      requestUrl(`${protocol}://${localHost}:${port}/health`).then((response) => {
         try {
           if (response.status !== 200 || JSON.parse(response.body).status !== "ok") throw new Error("Health check failed.");
           resolve();
@@ -84,7 +91,7 @@ function waitForHealth(port, name, attempts = 30) {
     };
     const retry = () => {
       if (--remaining <= 0) {
-        reject(new Error(`${name} did not become healthy at ${protocol}://localhost:${port}.`));
+        reject(new Error(`${name} did not become healthy at ${protocol}://${localHost}:${port}.`));
         return;
       }
       setTimeout(tryRequest, 500);
@@ -95,27 +102,31 @@ function waitForHealth(port, name, attempts = 30) {
 
 Promise.all([
   waitForHealth(marketplacePort, "Marketplace"),
-  waitForHealth(buyerPort, "Scout buyer")
+  waitForHealth(buyerPort, "Scout buyer"),
+  waitForHealth(ledgerPort, "Marketplace ledger")
 ]).then(() => {
   return Promise.all([
-    requestUrl(`${protocol}://localhost:${marketplacePort}/api/registry`, {
+    requestUrl(`${protocol}://${localHost}:${marketplacePort}/api/registry`, {
     Origin: expectedBuyerOrigin
     }),
-    requestUrl(`${protocol}://localhost:${buyerPort}/buyer.html`)
+    requestUrl(`${protocol}://${localHost}:${buyerPort}/buyer.html`),
+    requestUrl(`${protocol}://${localHost}:${ledgerPort}/`)
   ]);
-}).then(([registryResponse, buyerPageResponse]) => {
+}).then(([registryResponse, buyerPageResponse, ledgerPageResponse]) => {
   const expectedOrigin = expectedBuyerOrigin;
   if (
     registryResponse.status !== 200 ||
     registryResponse.headers["access-control-allow-origin"] !== expectedOrigin ||
     !Array.isArray(JSON.parse(registryResponse.body)) ||
     buyerPageResponse.status !== 200 ||
-    !buyerPageResponse.body.includes("Scout Buyer Dashboard")
+    !buyerPageResponse.body.includes("Scout Buyer Dashboard") ||
+    ledgerPageResponse.status !== 200 ||
+    !ledgerPageResponse.body.includes("Call ledger")
   ) {
-    throw new Error("Marketplace-to-buyer readiness check failed.");
+    throw new Error("Marketplace, buyer, or ledger readiness check failed.");
   }
-  console.log(`Both ${protocol.toUpperCase()} services are healthy: Marketplace :${marketplacePort}, Scout buyer :${buyerPort}.`);
-  console.log(`Registry access and buyer-origin CORS are verified over ${protocol.toUpperCase()}.`);
+  console.log(`All ${protocol.toUpperCase()} services are healthy: Marketplace :${marketplacePort}, Scout buyer :${buyerPort}, Call ledger :${ledgerPort}.`);
+  console.log(`Registry access, buyer-origin CORS, and the separate ledger page are verified over ${protocol.toUpperCase()}.`);
 }).catch((error) => {
   console.error(error.message);
   shutdown(1);

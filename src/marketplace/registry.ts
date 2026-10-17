@@ -3,8 +3,10 @@ import contract from "../../marketplace-contract.json" with { type: "json" };
 import type { SellerListing, SellerRegistration } from "../types.js";
 import {
   calculateReputation,
+  getSellerTrustStatus,
   getSeller,
   listSellers,
+  reinstateSellerAfterReview,
   saveSeller
 } from "./database.js";
 
@@ -12,24 +14,62 @@ const ajv = new Ajv2020({ allErrors: true, strict: false });
 
 // Reputation is calculated from call records, so it is never trusted from a registration request.
 const listingSchema = structuredClone(contract.sellerListingSchema);
-const listingProperties = listingSchema.properties as Record<string, { pattern?: string; type?: string; minimum?: number }>;
+const listingProperties = listingSchema.properties as Record<string, { pattern?: string; type?: string; minimum?: number; enum?: string[] }>;
 listingProperties.paymentRequired = { type: "boolean" };
 listingProperties.ready = { type: "boolean" };
 listingProperties.readinessReason = { type: "string" };
 listingProperties.selectionScore = { type: "number", minimum: 0 };
+listingProperties.trustStatus = { type: "string", enum: ["unproven", "active", "quarantined", "blacklisted"] };
+listingProperties.demoScamType = { type: "string", enum: ["price_mismatch", "recipient_mismatch"] };
 const validateListing = ajv.compile(listingSchema);
 
 function withCurrentReputation(listing: SellerListing): SellerListing {
-  const reputation = calculateReputation(listing.id);
-  const neutralSuccessRate = reputation.successRatePercent ?? 100;
-  const price = BigInt(listing.priceUnits);
-  // Free listings use success rate alone because dividing by zero is undefined.
-  const selectionScore = price === 0n ? neutralSuccessRate : neutralSuccessRate / Number(price);
   return {
     ...listing,
-    reputation,
-    selectionScore
+    reputation: calculateReputation(listing.id),
+    trustStatus: getSellerTrustStatus(listing.id),
+    rankingFactors: { legitimacy: 50, success: 50, availability: 50, latency: 50, cost: 50 },
+    selectionScore: 50
   };
+}
+
+function rankSellers(listings: SellerListing[]): SellerListing[] {
+  const eligible = listings.filter((seller) => seller.ready !== false &&
+    seller.trustStatus !== "quarantined" && seller.trustStatus !== "blacklisted");
+  const timed = eligible.filter((seller) => seller.reputation.medianLatencyMs !== null);
+  const prices = eligible.map((seller) => BigInt(seller.priceUnits));
+  const minLatency = Math.min(...timed.map((seller) => seller.reputation.medianLatencyMs!));
+  const maxLatency = Math.max(...timed.map((seller) => seller.reputation.medianLatencyMs!));
+  const minPrice = prices.length ? prices.reduce((a, b) => a < b ? a : b) : 0n;
+  const maxPrice = prices.length ? prices.reduce((a, b) => a > b ? a : b) : 0n;
+
+  const ranked = listings.map((seller) => {
+    if (seller.trustStatus === "unproven") return { ...seller, rankingFactors: { legitimacy: 50, success: 50, availability: 50, latency: 50, cost: 50 }, selectionScore: 50 };
+    const reputation = seller.reputation;
+    const total = Math.max(1, reputation.totalCalls);
+    const factors = {
+      legitimacy: Math.max(0, (1 - reputation.mismatchCount / total) * 100),
+      success: reputation.successRatePercent ?? 50,
+      availability: reputation.availabilityPercent ?? 50,
+      latency: reputation.medianLatencyMs === null ? 50 : maxLatency === minLatency
+        ? 100
+        : ((maxLatency - reputation.medianLatencyMs) / (maxLatency - minLatency)) * 100,
+      cost: maxPrice === minPrice ? 100 : Number(((maxPrice - BigInt(seller.priceUnits)) * 10000n) / (maxPrice - minPrice)) / 100
+    };
+    const score = factors.legitimacy * 0.4 + factors.success * 0.25 + factors.availability * 0.15 + factors.latency * 0.1 + factors.cost * 0.1;
+    return { ...seller, rankingFactors: factors, selectionScore: Math.round(score * 100) / 100 };
+  });
+
+  return ranked.sort((left, right) => {
+    const scoreDifference = (right.selectionScore ?? 0) - (left.selectionScore ?? 0);
+    if (scoreDifference !== 0) return scoreDifference;
+    const latencyDifference = (left.reputation.medianLatencyMs ?? Number.MAX_SAFE_INTEGER) -
+      (right.reputation.medianLatencyMs ?? Number.MAX_SAFE_INTEGER);
+    if (latencyDifference !== 0) return latencyDifference;
+    const priceDifference = BigInt(left.priceUnits) - BigInt(right.priceUnits);
+    if (priceDifference !== 0n) return priceDifference < 0n ? -1 : 1;
+    return left.id.localeCompare(right.id);
+  });
 }
 
 export function registerSeller(input: SellerRegistration, registrationSource: "website" | "built_in" = "website"): SellerListing {
@@ -66,6 +106,7 @@ export function registerSeller(input: SellerRegistration, registrationSource: "w
     paymentRequired: paymentsEnabled,
     ready: registrationSource === "built_in" ? input.ready === true : true,
     ...(input.readinessReason ? { readinessReason: input.readinessReason } : {}),
+    ...(registrationSource === "built_in" && input.demoScamType ? { demoScamType: input.demoScamType } : {}),
     reputation: calculateReputation(input.id)
   } as SellerListing;
 
@@ -75,12 +116,12 @@ export function registerSeller(input: SellerRegistration, registrationSource: "w
   }
 
   saveSeller(listing, registrationSource);
-  return listing;
+  return findSeller(input.id)!;
 }
 
 export function findSeller(id: string): SellerListing | undefined {
   const listing = getSeller(id);
-  return listing ? withCurrentReputation(listing) : undefined;
+  return listing ? rankSellers([withCurrentReputation(listing)])[0] : undefined;
 }
 
 export function searchSellers(filters: {
@@ -88,12 +129,15 @@ export function searchSellers(filters: {
   maxPriceUnits?: string;
   query?: string;
   ready?: boolean;
+  includeBlocked?: boolean;
 }): SellerListing[] {
   const maxPrice = filters.maxPriceUnits
     ? BigInt(filters.maxPriceUnits)
     : undefined;
 
-  return listSellers()
+  const listings = listSellers()
+    .map(withCurrentReputation)
+    .filter((seller) => filters.includeBlocked || (seller.trustStatus !== "quarantined" && seller.trustStatus !== "blacklisted"))
     .filter((seller) => !filters.category || seller.category === filters.category)
     .filter((seller) => filters.ready === undefined || seller.ready === filters.ready)
     .filter((seller) => {
@@ -103,16 +147,10 @@ export function searchSellers(filters: {
     .filter(
       (seller) =>
         maxPrice === undefined || BigInt(seller.priceUnits) <= maxPrice
-    )
-    .map(withCurrentReputation)
-    .sort((left, right) => {
-      const scoreDifference = (right.selectionScore ?? 0) - (left.selectionScore ?? 0);
-      if (scoreDifference !== 0) return scoreDifference;
-      const latencyDifference = (left.reputation.medianLatencyMs ?? Number.MAX_SAFE_INTEGER) -
-        (right.reputation.medianLatencyMs ?? Number.MAX_SAFE_INTEGER);
-      if (latencyDifference !== 0) return latencyDifference;
-      const priceDifference = BigInt(left.priceUnits) - BigInt(right.priceUnits);
-      if (priceDifference !== 0n) return priceDifference < 0n ? -1 : 1;
-      return left.id.localeCompare(right.id);
-    });
+    );
+  return rankSellers(listings);
+}
+
+export function reinstateSeller(id: string): boolean {
+  return reinstateSellerAfterReview(id);
 }

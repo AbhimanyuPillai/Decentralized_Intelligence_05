@@ -6,6 +6,16 @@ const runButton = document.querySelector("#run-button");
 const runStatus = document.querySelector("#run-status");
 const runReport = document.querySelector("#run-report");
 const callReports = document.querySelector("#call-reports");
+const budgetDecision = document.querySelector("#budget-decision");
+const extendBudgetButton = document.querySelector("#extend-budget-button");
+const continueBudgetButton = document.querySelector("#continue-budget-button");
+let pendingProposalId = null;
+let confirmationChoice = null;
+let confirmationInFlight = false;
+let budgetExtensionAllowed = false;
+let paidModeEnabled = false;
+let selectedDemoSellerId = null;
+const scamDemoButtons = document.querySelectorAll("[data-scam-test]");
 
 function showStatus(message, kind = "") {
   runStatus.textContent = message;
@@ -60,8 +70,15 @@ function makeCallReport(step) {
     : step.status === "settlement unknown"
       ? "Settlement unverified"
       : `${unitsToUsdc(step.amountPaidUnits)} USDC`;
-  facts.textContent = `${step.latencyMs} ms · Listed ${unitsToUsdc(step.listedPriceUnits)} USDC · Asked ${unitsToUsdc(step.askedPriceUnits)} USDC · Paid ${amount} · ${step.schemaValid === null ? "Input not sent" : step.schemaValid ? "Output schema valid" : "Output schema invalid"} · ${step.ledgerSaved ? "Saved to Marketplace ledger" : "Not saved to Marketplace ledger"}`;
+  facts.textContent = `${step.latencyMs} ms · Listed ${unitsToUsdc(step.listedPriceUnits)} USDC · Asked ${unitsToUsdc(step.askedPriceUnits)} USDC · Paid ${amount} · ${step.schemaValid === null ? "Output schema not checked" : step.schemaValid ? "Output schema valid" : "Output schema invalid"} · ${step.ledgerSaved ? "Saved to Call Ledger" : "Not saved to Call Ledger"}`;
   card.append(facts);
+
+  if (step.scamMismatch) {
+    const mismatchMessage = step.scamMismatch === "price_mismatch"
+      ? `Seller requested ${unitsToUsdc(step.observedChallenge?.amount ?? step.askedPriceUnits)} USDC after listing ${unitsToUsdc(step.listedPriceUnits)} USDC.`
+      : "Seller requested a pay-to address different from its listing.";
+    addText(card, "p", "safety-alert", `Payment blocked—no funds sent. ${mismatchMessage} Scout recorded a scam attempt, quarantined the seller, and will try another eligible seller.`);
+  }
 
   if (step.txHash && step.explorerUrl) {
     const link = document.createElement("a");
@@ -99,6 +116,89 @@ function showReport(report) {
   runReport.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+function setTaskFormDisabled(disabled) {
+  taskInput.disabled = disabled;
+  budgetInput.disabled = disabled;
+  concurrencyInput.disabled = disabled;
+  runButton.disabled = disabled;
+}
+
+function setScamDemoButtonsDisabled(disabled) {
+  for (const button of scamDemoButtons) button.disabled = disabled;
+}
+
+function showBudgetDecision(decision) {
+  const budgetDecisionSummary = document.querySelector("#budget-decision-summary");
+  const extensionNote = document.querySelector("#budget-extension-note");
+  const shortfallSteps = document.querySelector("#budget-shortfall-steps");
+  budgetDecisionSummary.textContent = `Scout estimates this plan at ${unitsToUsdc(decision.estimatedUnits)} USDC, which is ${unitsToUsdc(decision.shortfallUnits)} USDC over your ${unitsToUsdc(decision.budgetUnits)} USDC budget. No seller calls have started.`;
+  extensionNote.textContent = decision.extensionAllowed
+    ? `You can raise the task cap to ${unitsToUsdc(decision.estimatedUnits)} USDC. Scout's configured maximum is ${unitsToUsdc(decision.configuredMaximumUnits)} USDC.`
+    : `${decision.extensionReason ?? "The estimate is above Scout's configured maximum."} You can continue with the current budget.`;
+  shortfallSteps.replaceChildren();
+  for (const step of decision.overBudgetSteps) {
+    const item = document.createElement("li");
+    item.append(document.createTextNode(`${step.serviceName}: ${step.task}`));
+    const detail = document.createElement("span");
+    detail.className = "budget-step-cost";
+    detail.textContent = `Listed ${unitsToUsdc(step.listedPriceUnits)} USDC · ${unitsToUsdc(step.remainingUnitsAtThatPoint)} USDC would remain at this point. ${step.reason}`;
+    item.append(detail);
+    shortfallSteps.append(item);
+  }
+  budgetExtensionAllowed = decision.extensionAllowed;
+  extendBudgetButton.disabled = !budgetExtensionAllowed;
+  budgetDecision.hidden = false;
+  budgetDecision.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+async function confirmBudget(choice) {
+  if (!pendingProposalId || confirmationInFlight || (confirmationChoice && confirmationChoice !== choice)) return;
+  confirmationChoice = choice;
+  confirmationInFlight = true;
+  extendBudgetButton.disabled = true;
+  continueBudgetButton.disabled = true;
+  showStatus(choice === "extend" ? "Extending the task cap and starting the planned calls…" : "Continuing with the current cap and starting affordable calls…");
+  try {
+    const response = await fetch("/api/execute/confirm", {
+      method: "POST",
+      headers: { accept: "application/json", "content-type": "application/json" },
+      body: JSON.stringify({ proposalId: pendingProposalId, choice }),
+      signal: AbortSignal.timeout(600_000)
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      if (response.status === 409) {
+        pendingProposalId = null;
+        confirmationChoice = null;
+        budgetDecision.hidden = true;
+        setTaskFormDisabled(false);
+        setScamDemoButtonsDisabled(!paidModeEnabled);
+      }
+      throw new Error(result.error ?? `Could not confirm the budget (${response.status}).`);
+    }
+    pendingProposalId = null;
+    confirmationChoice = null;
+    budgetDecision.hidden = true;
+    showReport(result);
+    showStatus(result.success ? "Task completed. Review the call report below." : "Scout stopped early. Review completed work and failures below.", result.success ? "success" : "error");
+  } catch (error) {
+    showStatus(error.message, "error");
+  } finally {
+    confirmationInFlight = false;
+    if (pendingProposalId) {
+      extendBudgetButton.disabled = confirmationChoice === "continue" || !budgetExtensionAllowed;
+      continueBudgetButton.disabled = confirmationChoice === "extend";
+    }
+    if (!pendingProposalId) {
+      setTaskFormDisabled(false);
+      setScamDemoButtonsDisabled(!paidModeEnabled);
+    }
+  }
+}
+
+extendBudgetButton.addEventListener("click", () => confirmBudget("extend"));
+continueBudgetButton.addEventListener("click", () => confirmBudget("continue"));
+
 async function loadConfig() {
   try {
     const response = await fetch("/api/config", { headers: { accept: "application/json" } });
@@ -106,6 +206,13 @@ async function loadConfig() {
     if (!response.ok) throw new Error(config.error ?? "Buyer configuration is unavailable.");
     document.querySelector("#marketplace-status").textContent = `Scout will use ${config.marketplaceBaseUrl}. Task limit: ${unitsToUsdc(config.maxBudgetUnits)} USDC.`;
     document.querySelector("#mode-pill").textContent = config.paidMode ? "Base Sepolia paid mode" : "Local free test mode";
+    paidModeEnabled = config.paidMode === true;
+    setScamDemoButtonsDisabled(!paidModeEnabled);
+    if (!paidModeEnabled) {
+      document.querySelector("#scam-demo-help").textContent = "Turn on paid mode to run these live tests. Scout needs to receive the demo seller's x402 payment request before it can detect the mismatch.";
+    } else if (!config.paidReady) {
+      document.querySelector("#scam-demo-help").textContent = "Scout can catch the mismatch without a buyer wallet. To let it also pay a safe fallback, configure the Base Sepolia test wallet first.";
+    }
   } catch (error) {
     document.querySelector("#marketplace-status").textContent = error.message;
   }
@@ -124,31 +231,52 @@ taskForm.addEventListener("submit", async (event) => {
     return;
   }
 
-  runButton.disabled = true;
-  taskInput.disabled = true;
-  budgetInput.disabled = true;
-  concurrencyInput.disabled = true;
+  pendingProposalId = null;
+  const demoSellerId = selectedDemoSellerId;
+  selectedDemoSellerId = null;
+  confirmationChoice = null;
+  budgetExtensionAllowed = false;
+  setTaskFormDisabled(true);
+  setScamDemoButtonsDisabled(true);
+  budgetDecision.hidden = true;
   runReport.hidden = true;
-  showStatus("Scout is checking the Marketplace, planning seller calls, and running the task…");
+  showStatus(demoSellerId
+    ? "Scout is contacting the selected scam demo, checking its payment request, and trying a safe fallback if it can."
+    : "Scout is checking the Marketplace, planning seller calls, and running the task…");
   try {
     const response = await fetch("/api/execute", {
       method: "POST",
       headers: { accept: "application/json", "content-type": "application/json" },
-      body: JSON.stringify({ task, budgetUnits, maxConcurrency: Number(concurrencyInput.value) }),
+      body: JSON.stringify({ task, budgetUnits, maxConcurrency: Number(concurrencyInput.value), ...(demoSellerId ? { demoSellerId } : {}) }),
       signal: AbortSignal.timeout(600_000)
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error ?? `Task failed (${response.status}).`);
+    if (result.type === "budget_decision") {
+      pendingProposalId = result.proposalId;
+      showBudgetDecision(result);
+      showStatus("Review the estimate and choose how Scout should continue.");
+      return;
+    }
     showReport(result);
     showStatus(result.success ? "Task completed. Review the call report below." : "Scout stopped early. Review completed work and failures below.", result.success ? "success" : "error");
   } catch (error) {
     showStatus(error.message, "error");
   } finally {
-    runButton.disabled = false;
-    taskInput.disabled = false;
-    budgetInput.disabled = false;
-    concurrencyInput.disabled = false;
+    if (!pendingProposalId) {
+      setTaskFormDisabled(false);
+      setScamDemoButtonsDisabled(!paidModeEnabled);
+    }
   }
 });
+
+for (const button of scamDemoButtons) {
+  button.addEventListener("click", () => {
+    selectedDemoSellerId = button.dataset.scamTest;
+    const sellerName = selectedDemoSellerId === "demo-price-inflator" ? "price scam" : "different pay-to scam";
+    taskInput.value = `Test Scout's safety checks with the ${sellerName} demo on books page 1, then try a safe seller if the budget allows.`;
+    taskForm.requestSubmit();
+  });
+}
 
 loadConfig();

@@ -3,8 +3,6 @@ const defaultAsset = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
 
 const serviceList = document.querySelector("#service-list");
 const servicesMessage = document.querySelector("#services-message");
-const ledgerRows = document.querySelector("#ledger-rows");
-const ledgerMessage = document.querySelector("#ledger-message");
 const registerMessage = document.querySelector("#register-message");
 const sellerForm = document.querySelector("#seller-form");
 const sellerPriceField = document.querySelector("#price-field");
@@ -83,24 +81,40 @@ function makeServiceCard(seller) {
   const titleGroup = document.createElement("div");
   addText(titleGroup, "h3", "", seller.name);
   addText(titleGroup, "span", "category-tag", seller.category);
+  const trustNames = {
+    unproven: "Unproven",
+    active: "Active",
+    quarantined: "Quarantined",
+    blacklisted: "Blacklisted"
+  };
+  addText(titleGroup, "span", `trust-tag trust-${seller.trustStatus || "unproven"}`, trustNames[seller.trustStatus] || "Unproven");
   top.append(titleGroup);
   addText(top, "span", "price", seller.paymentRequired === false ? "Free (test mode)" : `${unitsToUsdc(seller.priceUnits)} USDC`);
   card.append(top);
 
   addText(card, "p", "service-description", seller.description);
+  if (seller.demoScamType) addText(card, "p", "demo-warning", "Unsafe test seller. Use Scout's scam test buttons to see how it handles this seller.");
+  if (seller.trustStatus === "quarantined" || seller.trustStatus === "blacklisted") {
+    addText(card, "p", "message error", seller.trustStatus === "blacklisted"
+      ? "Blocked from Scout: this seller repeated a verified payment mismatch."
+      : "Blocked from Scout: this seller made a verified payment mismatch request.");
+  }
   if (seller.ready === false) addText(card, "p", "message error", seller.readinessReason || "Configuration required before this service can accept requests.");
   const meta = document.createElement("div");
   meta.className = "service-meta";
   const reputation = seller.reputation;
   const success = reputation.successRatePercent === null
-    ? "No call history · neutral 100% rank baseline"
-    : `${reputation.successRatePercent.toFixed(0)}% success`;
+    ? "0 completed calls · no score yet"
+    : `${reputation.successfulCalls}/${reputation.totalCalls} successful calls (${reputation.successRatePercent.toFixed(0)}%)`;
   const latency = reputation.medianLatencyMs === null
     ? "No latency data"
     : `${Math.round(reputation.medianLatencyMs)} ms median`;
-  addText(meta, "span", "", success);
-  addText(meta, "span", "", latency);
-  addText(meta, "span", "", `Ranking factor: ${success} ÷ ${seller.paymentRequired === false ? "free" : `${unitsToUsdc(seller.priceUnits)} USDC`}`);
+  addText(meta, "span", "", `${trustNames[seller.trustStatus] || "Unproven"} · ${success}`);
+  addText(meta, "span", "", `${latency} · ${reputation.availabilityPercent === null ? "No availability history" : `${reputation.availabilityPercent.toFixed(0)}% availability`}`);
+  addText(meta, "span", "", `Trust score: ${seller.selectionScore?.toFixed(1) ?? "—"}/100`);
+  const factors = seller.rankingFactors;
+  if (factors) addText(meta, "span", "", `Legitimacy ${factors.legitimacy.toFixed(0)} · Success ${factors.success.toFixed(0)} · Availability ${factors.availability.toFixed(0)} · Speed ${factors.latency.toFixed(0)} · Cost ${factors.cost.toFixed(0)}`);
+  addText(meta, "span", "", `${reputation.mismatchCount} verified mismatch${reputation.mismatchCount === 1 ? "" : "es"}`);
   card.append(meta, makeSchemaDetails(seller));
   return card;
 }
@@ -119,6 +133,7 @@ async function loadServices() {
     if (maxPrice) query.set("maxPriceUnits", usdcToUnits(maxPrice));
     if (queryText) query.set("q", queryText);
     if (ready) query.set("ready", ready);
+    query.set("includeBlocked", "true");
 
     const sellers = await requestJson(`/api/registry?${query.toString()}`);
     if (sellers.length === 0) {
@@ -129,73 +144,6 @@ async function loadServices() {
     showMessage(servicesMessage, `${sellers.length} service${sellers.length === 1 ? "" : "s"} found.`);
   } catch (error) {
     showMessage(servicesMessage, error.message, "error");
-  }
-}
-
-function statusClass(status) {
-  return `status-${status.replaceAll(" ", "-").replaceAll(",", "")}`;
-}
-
-function makeLedgerCell(row, value) {
-  const cell = document.createElement("td");
-  cell.textContent = value;
-  row.append(cell);
-  return cell;
-}
-
-function makeLedgerRow(record) {
-  const row = document.createElement("tr");
-  const date = new Date(record.timestamp).toLocaleString();
-  makeLedgerCell(row, date);
-  makeLedgerCell(row, record.taskId || "Older call");
-  makeLedgerCell(row, `${record.buyerAddress.slice(0, 6)}…${record.buyerAddress.slice(-4)}`);
-  makeLedgerCell(row, record.serviceName);
-  makeLedgerCell(row, `${unitsToUsdc(record.listedPriceUnits)} USDC`);
-  makeLedgerCell(row, `${unitsToUsdc(record.askedPriceUnits)} USDC`);
-  makeLedgerCell(row, `${unitsToUsdc(record.amountPaidUnits)} USDC`);
-  const isPaidStatus = record.status === "paid" || record.status === "paid, output rejected";
-  const isUnverifiedPaid = isPaidStatus && record.chainVerified !== true;
-  const visibleStatus = isUnverifiedPaid
-    ? `${record.status} · not verified`
-    : record.status;
-  const status = makeLedgerCell(row, visibleStatus);
-  status.innerHTML = "";
-  const tag = document.createElement("span");
-  tag.className = `status-tag ${isUnverifiedPaid ? "status-unverified-paid" : statusClass(record.status)}`;
-  tag.textContent = visibleStatus;
-  status.append(tag);
-  makeLedgerCell(row, record.reason || "—");
-  makeLedgerCell(row, `${record.latencyMs} ms`);
-  const receipt = document.createElement("td");
-  if (record.explorerUrl) {
-    const link = document.createElement("a");
-    link.href = record.explorerUrl;
-    link.target = "_blank";
-    link.rel = "noreferrer";
-    link.textContent = "View tx";
-    receipt.append(link);
-  } else {
-    receipt.textContent = "—";
-  }
-  row.append(receipt);
-  return row;
-}
-
-async function loadLedger() {
-  showMessage(ledgerMessage, "Loading call records…");
-  ledgerRows.replaceChildren();
-  try {
-    const records = await requestJson("/api/ledger?limit=100");
-    if (records.length === 0) {
-      showMessage(ledgerMessage, "No calls have been recorded yet.");
-      return;
-    }
-    for (const record of records) ledgerRows.append(makeLedgerRow(record));
-    const paid = records.filter((record) => record.status === "paid" || record.status === "paid, output rejected");
-    const verifiedPaid = paid.filter((record) => record.chainVerified === true);
-    showMessage(ledgerMessage, `${records.length} recent call${records.length === 1 ? "" : "s"}. Verified spend in these records: ${unitsToUsdc(verifiedPaid.reduce((sum, record) => sum + BigInt(record.amountPaidUnits), 0n).toString())} USDC.`);
-  } catch (error) {
-    showMessage(ledgerMessage, error.message, "error");
   }
 }
 
@@ -211,7 +159,6 @@ document.querySelector("#service-query-filter").addEventListener("input", () => 
   window.serviceSearchTimer = setTimeout(loadServices, 250);
 });
 document.querySelector("#refresh-services").addEventListener("click", loadServices);
-document.querySelector("#refresh-ledger").addEventListener("click", loadLedger);
 document.querySelectorAll("[data-tab]").forEach((button) => {
   button.addEventListener("click", () => showTab(button.dataset.tab));
 });
@@ -293,7 +240,6 @@ document.querySelector('[name="outputSchema"]').value = JSON.stringify({
 }, null, 2);
 
 loadServices();
-loadLedger();
 loadRegistrationConfig();
 
 // Keep displayed seller reputation fresh while the marketplace tab is open.

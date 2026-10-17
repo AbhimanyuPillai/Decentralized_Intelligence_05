@@ -1,10 +1,23 @@
 export type ServiceCategory = "scraping" | "data" | "inference";
 
+export type SellerTrustStatus = "unproven" | "active" | "quarantined" | "blacklisted";
+export type ScamMismatch = "price_mismatch" | "recipient_mismatch";
+
+export interface RankingFactors {
+  legitimacy: number;
+  success: number;
+  availability: number;
+  latency: number;
+  cost: number;
+}
+
 export interface Reputation {
   totalCalls: number;
   successfulCalls: number;
   successRatePercent: number | null;
   medianLatencyMs: number | null;
+  availabilityPercent: number | null;
+  mismatchCount: number;
 }
 
 export interface SellerListing {
@@ -18,6 +31,9 @@ export interface SellerListing {
   ready?: boolean;
   readinessReason?: string;
   selectionScore?: number;
+  trustStatus: SellerTrustStatus;
+  rankingFactors: RankingFactors;
+  demoScamType?: ScamMismatch;
   network: string;
   asset: string;
   payTo: string;
@@ -26,7 +42,7 @@ export interface SellerListing {
   reputation: Reputation;
 }
 
-export interface SellerRegistration extends Omit<SellerListing, "reputation"> {
+export interface SellerRegistration extends Omit<SellerListing, "reputation" | "trustStatus" | "rankingFactors" | "selectionScore"> {
   reputation?: Reputation;
 }
 
@@ -55,4 +71,12 @@ export interface LedgerRecord {
   status: CallStatus;
   latencyMs: number;
   reason?: string;
+  sellerResponded?: boolean;
+  scamMismatch?: ScamMismatch;
+  observedChallenge?: {
+    amount: string;
+    network: string;
+    asset: string;
+    payTo: string;
+  };
 }

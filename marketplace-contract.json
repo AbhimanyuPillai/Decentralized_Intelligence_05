@@ -1,5 +1,5 @@
 {
-  "contractVersion": "1.1.0",
+  "contractVersion": "1.2.0",
   "description": "Shared application contract for the agent marketplace. x402 wire payloads and signatures must be handled by the official x402 v2 SDK, not hand-authored here.",
   "conventions": {
     "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
@@ -62,6 +62,20 @@
         "type": "number",
         "minimum": 0
       },
+      "trustStatus": { "type": "string", "enum": ["unproven", "active", "quarantined", "blacklisted"] },
+      "demoScamType": { "type": "string", "enum": ["price_mismatch", "recipient_mismatch"] },
+      "rankingFactors": {
+        "type": "object",
+        "properties": {
+          "legitimacy": { "type": "number", "minimum": 0, "maximum": 100 },
+          "success": { "type": "number", "minimum": 0, "maximum": 100 },
+          "availability": { "type": "number", "minimum": 0, "maximum": 100 },
+          "latency": { "type": "number", "minimum": 0, "maximum": 100 },
+          "cost": { "type": "number", "minimum": 0, "maximum": 100 }
+        },
+        "required": ["legitimacy", "success", "availability", "latency", "cost"],
+        "additionalProperties": false
+      },
       "network": {
         "type": "string",
         "const": "eip155:84532"
@@ -104,6 +118,15 @@
               "number",
               "null"
             ],
+            "minimum": 0
+          },
+          "availabilityPercent": {
+            "type": ["number", "null"],
+            "minimum": 0,
+            "maximum": 100
+          },
+          "mismatchCount": {
+            "type": "integer",
             "minimum": 0
           }
         },
@@ -497,6 +520,24 @@
       },
       "reason": {
         "type": "string"
+      },
+      "sellerResponded": {
+        "type": "boolean"
+      },
+      "scamMismatch": {
+        "type": "string",
+        "enum": ["price_mismatch", "recipient_mismatch"]
+      },
+      "observedChallenge": {
+        "type": "object",
+        "properties": {
+          "amount": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+          "network": { "type": "string" },
+          "asset": { "type": "string", "pattern": "^0x[a-fA-F0-9]{40}$" },
+          "payTo": { "type": "string", "pattern": "^0x[a-fA-F0-9]{40}$" }
+        },
+        "required": ["amount", "network", "asset", "payTo"],
+        "additionalProperties": false
       }
     },
     "required": [
@@ -563,6 +604,27 @@
     ],
     "budgetReservationRule": "Atomically require spentUnits + reservedUnits + callPriceUnits <= budgetUnits before starting a call. On settlement, move the reservation to spent; on confirmed failure without settlement, release it.",
     "replayRule": "Consume each signed authorization at most once. Use atomic persistent/shared idempotency and replay state; an in-memory set alone is insufficient."
+  },
+  "sellerSafety": {
+    "trustStatuses": ["unproven", "active", "quarantined", "blacklisted"],
+    "newSeller": "Starts as unproven with zero completed calls, no reputation score, and neutral ranking factors.",
+    "mismatchRules": {
+      "price_mismatch": "Observed x402 amount differs from the registered price; refuse before signing and quarantine the seller.",
+      "recipient_mismatch": "Observed x402 payTo differs from the registered recipient; refuse before signing and quarantine the seller.",
+      "repeat": "A second distinct trusted Scout finding blacklists the seller. Only an administrator may reinstate it after review."
+    },
+    "rankingWeights": {
+      "legitimacy": 0.4,
+      "successfulCompletion": 0.25,
+      "availability": 0.15,
+      "latency": 0.1,
+      "listedCost": 0.1
+    },
+    "demoSellers": [
+      { "id": "demo-price-inflator", "scamMismatch": "price_mismatch", "listedPriceUnits": "2000", "requestedPriceUnits": "20000" },
+      { "id": "demo-recipient-switch", "scamMismatch": "recipient_mismatch", "listedPriceUnits": "2000", "requestedPayTo": "A different address from the listing" }
+    ],
+    "findingTrust": "A safety finding requires a private Scout-to-Marketplace report token and structured observed challenge values; caller-supplied reason text alone is not evidence."
   },
   "exampleTaskCostPlan": {
     "scrapingCalls": 4,

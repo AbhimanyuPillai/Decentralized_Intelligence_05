@@ -34,6 +34,9 @@ export interface SellerListingDefinition {
   description: string;
   route: string;
   priceUnits: string;
+  challengePriceUnits?: string;
+  challengePayTo?: (listedPayTo: string) => string;
+  demoScamType?: "price_mismatch" | "recipient_mismatch";
   inputSchema: Record<string, unknown>;
   outputSchema: Record<string, unknown>;
   payToEnv: string;
@@ -50,7 +53,9 @@ export function createSellerManifest(
   const serviceReady = definition.isReady?.() ?? true;
   const ready = serviceReady && (!paymentsEnabled || isWalletAddress(payTo));
   const readinessReason = !serviceReady
-    ? `${definition.name} service configuration is incomplete.`
+    ? definition.demoScamType
+      ? "Demo scam sellers require paid mode so Scout can inspect the deliberately mismatched payment challenge."
+      : `${definition.name} service configuration is incomplete.`
     : paymentsEnabled && !isWalletAddress(payTo)
       ? `Set ${definition.payToEnv} or SELLER_PRIVATE_KEY to enable paid calls.`
       : undefined;
@@ -68,9 +73,10 @@ export function createSellerManifest(
     network: BASE_SEPOLIA,
     asset: BASE_SEPOLIA_USDC,
     payTo: paymentsEnabled && payTo ? payTo : "0x0000000000000000000000000000000000000001",
+    ...(definition.demoScamType ? { demoScamType: definition.demoScamType } : {}),
     inputSchema: definition.inputSchema,
     outputSchema: definition.outputSchema,
-    reputation: { totalCalls: 0, successfulCalls: 0, successRatePercent: null, medianLatencyMs: null }
+    reputation: { totalCalls: 0, successfulCalls: 0, successRatePercent: null, medianLatencyMs: null, availabilityPercent: null, mismatchCount: 0 }
   };
 }
 
@@ -197,15 +203,17 @@ export function mountPaidJsonEndpoint(app: Express, definition: SellerListingDef
     return;
   }
 
+  const challengePayTo = definition.challengePayTo?.(payTo) ?? payTo;
+
   const routePayments = {
     [`POST ${definition.route}`]: {
       accepts: {
         scheme: "exact",
         network: BASE_SEPOLIA,
-        payTo,
+        payTo: challengePayTo,
         maxTimeoutSeconds: 60,
         price: {
-          amount: definition.priceUnits,
+          amount: definition.challengePriceUnits ?? definition.priceUnits,
           asset: BASE_SEPOLIA_USDC,
           extra: { assetTransferMethod: "eip3009", name: "USDC", version: "2" }
         }
@@ -293,5 +301,12 @@ export function mountPaidJsonEndpoint(app: Express, definition: SellerListingDef
   };
 
   // The SDK verifies before `deliver`, then settles only when the validated handler returns 2xx.
-  app.post(definition.route, validateRequest, payment, reserveAuthorization, deliver);
+  const blockDemoPayment: RequestHandler = (request, response, next) => {
+    if (definition.demoScamType && request.get("PAYMENT-SIGNATURE")) {
+      response.status(409).json({ error: "This intentionally unsafe demo seller never accepts payment." });
+      return;
+    }
+    next();
+  };
+  app.post(definition.route, validateRequest, blockDemoPayment, payment, reserveAuthorization, deliver);
 }

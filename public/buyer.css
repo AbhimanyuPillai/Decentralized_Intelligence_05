@@ -6,10 +6,23 @@
 .buyer-intro h1 { font-size: clamp(32px, 5vw, 46px); }
 .buyer-intro > p:last-child { max-width: 680px; color: var(--muted); }
 .connection-card, .task-form, .run-report { padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.scam-demo-card { margin-top: 14px; padding: 0 14px; border: 1px solid #f2c078; border-radius: 10px; background: #fff9ef; }
+.scam-demo-card > summary { cursor: pointer; padding: 11px 2px; font-weight: 650; }
+.scam-demo-content { padding: 0 2px 14px; }
+.scam-demo-content > p:first-child { max-width: 700px; margin-top: 0; color: var(--muted); }
+.scam-demo-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .connection-card h2 { margin: 0; font-size: 19px; }
 .connection-card .eyebrow, .run-report .eyebrow { margin: 0 0 6px; }
 .connection-help { margin: 10px 0 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .conversation { margin-top: 22px; }
+.budget-decision { display: grid; gap: 10px; margin-top: 18px; padding: 20px; border: 1px solid #f2c078; border-radius: 12px; background: #fff9ef; }
+.budget-decision[hidden] { display: none; }
+.budget-decision h2, .budget-decision h3, .budget-decision p { margin: 0; }
+.budget-decision h2 { font-size: 20px; }
+.budget-shortfall-steps { display: grid; gap: 8px; margin: 0; padding-left: 22px; }
+.budget-shortfall-steps li { padding-left: 4px; }
+.budget-step-cost { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; }
+.budget-decision-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
 .task-form { display: grid; gap: 10px; }
 .task-form > label { font-weight: 650; }
 .task-form textarea { width: 100%; min-height: 110px; padding: 12px; font: inherit; font-size: 14px; resize: vertical; }
@@ -19,6 +32,7 @@
 .budget-input-wrap input { width: 150px; }
 .budget-input-wrap span { color: var(--muted); font-size: 13px; }
 .task-form button:disabled { cursor: wait; opacity: .65; }
+.budget-decision button:disabled { cursor: not-allowed; opacity: .55; }
 .run-report { display: grid; gap: 12px; margin-top: 18px; }
 .run-report[hidden] { display: none; }
 .report-heading, .call-report-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -30,12 +44,14 @@
 .call-report h4 { margin: 0; font-size: 15px; }
 .call-report .connection-help { margin-top: 3px; }
 .call-report .message { margin: 0; }
+.safety-alert { margin: 0; padding: 10px 12px; border: 1px solid #f2c078; border-radius: 8px; background: #fff9ef; color: #8a4b08; font-size: 13px; font-weight: 650; }
 .call-json { max-height: 320px; overflow: auto; padding: 12px; border-radius: 8px; background: #f6f8fb; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .call-report summary { cursor: pointer; font-size: 13px; }
 .call-report h5 { margin: 10px 0 4px; }
 .status-tag { display: inline-block; border-radius: 999px; padding: 3px 8px; background: #f2f4f7; font-size: 11px; white-space: nowrap; }
 .status-paid, .status-completed-free { background: #e4f7ec; color: #17663a; }
-.status-refused, .status-failed-and-not-charged, .status-paid-output-rejected, .status-settlement-unknown { background: #fff1f0; color: #a32b22; }
+.status-settlement-unknown { background: #fff1d6; color: #8a4b08; }
+.status-refused, .status-failed-and-not-charged, .status-paid-output-rejected { background: #fff1f0; color: #a32b22; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 @media (max-width: 640px) {
   .buyer-topbar { flex-wrap: wrap; gap: 12px; padding: 14px 18px; }

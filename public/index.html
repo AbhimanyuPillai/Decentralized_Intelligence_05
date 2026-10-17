@@ -13,7 +13,6 @@
       <nav class="tabs" role="tablist" aria-label="Marketplace sections">
         <button class="tab-button active" id="services-tab" type="button" role="tab" aria-selected="true" aria-controls="services" data-tab="services">Browse services</button>
         <button class="tab-button" id="register-tab" type="button" role="tab" aria-selected="false" aria-controls="register" data-tab="register">Register seller</button>
-        <button class="tab-button" id="ledger-tab" type="button" role="tab" aria-selected="false" aria-controls="ledger" data-tab="ledger">Call history</button>
       </nav>
       <span class="network-pill">Base Sepolia · Testnet</span>
     </header>
@@ -63,7 +62,7 @@
           <button class="button" type="submit">Search services</button>
         </form>
         <p id="services-message" class="message" role="status"></p>
-        <p class="section-copy">Listings are ordered by success rate divided by price. Sellers without history start at a neutral 100% rate; ties use median latency, then price and seller ID.</p>
+        <p class="section-copy">Scout ranks eligible sellers using legitimacy (40%), successful work (25%), availability (15%), response time (10%), and price (10%). New sellers are marked Unproven and start with neutral ranking factors.</p>
         <div id="service-list" class="service-grid"></div>
       </section>
 
@@ -74,7 +73,7 @@
             <h2>List a service</h2>
           </div>
         </div>
-        <p class="section-copy" id="registration-help">Register a service here. It will appear in Browse services after submission. The Marketplace calculates reputation from recorded calls.</p>
+        <p class="section-copy" id="registration-help">Register a service here. It will appear in Browse services after submission. New sellers start Unproven; the Marketplace builds reputation from verified calls and trusted Scout reports.</p>
 
         <form id="seller-form" class="form-grid">
           <label>Service ID<input name="id" required placeholder="e.g. book-scraper" pattern="[a-z0-9][a-z0-9-]*" /></label>
@@ -110,24 +109,6 @@
         </form>
       </section>
 
-      <section id="ledger" class="section tab-panel" role="tabpanel" aria-labelledby="ledger-tab" hidden>
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Activity</p>
-            <h2>Call ledger</h2>
-          </div>
-          <button id="refresh-ledger" class="button button-light" type="button">Refresh</button>
-        </div>
-        <p id="ledger-message" class="message" role="status"></p>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr><th>Time</th><th>Task ID</th><th>Buyer</th><th>Seller</th><th>Listed</th><th>Asked</th><th>Paid</th><th>Status</th><th>Details</th><th>Latency</th><th>Receipt</th></tr>
-            </thead>
-            <tbody id="ledger-rows"></tbody>
-          </table>
-        </div>
-      </section>
     </main>
 
     <footer>Agent Marketplace · Testnet prototype</footer>

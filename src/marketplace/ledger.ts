@@ -65,6 +65,9 @@ export function parseLedgerRecord(value: unknown): LedgerRecord {
   if (record.reason !== undefined && typeof record.reason !== "string") {
     throw new Error("reason must be a string when provided.");
   }
+  if (record.sellerResponded !== undefined && typeof record.sellerResponded !== "boolean") {
+    throw new Error("sellerResponded must be a boolean when provided.");
+  }
 
   const seller = findSeller(record.sellerId);
   if (!seller) throw new Error("sellerId is not registered in the Marketplace.");
@@ -76,6 +79,50 @@ export function parseLedgerRecord(value: unknown): LedgerRecord {
   }
   if (record.status === "settlement unknown" && seller.paymentRequired !== true) {
     throw new Error("settlement unknown is only valid for a paid listing.");
+  }
+
+  let scamMismatch: LedgerRecord["scamMismatch"];
+  let observedChallenge: LedgerRecord["observedChallenge"];
+  if (record.scamMismatch !== undefined) {
+    if (record.status !== "refused" || record.amountPaidUnits !== "0" || record.txHash !== null || record.sellerResponded !== true) {
+      throw new Error("A seller safety finding must be a refused, uncharged call with a seller response.");
+    }
+    if (!isObject(record.observedChallenge) ||
+      !isUnitAmount(record.observedChallenge.amount) ||
+      typeof record.observedChallenge.network !== "string" ||
+      typeof record.observedChallenge.asset !== "string" || !/^0x[a-fA-F0-9]{40}$/.test(record.observedChallenge.asset) ||
+      typeof record.observedChallenge.payTo !== "string" || !/^0x[a-fA-F0-9]{40}$/.test(record.observedChallenge.payTo)) {
+      throw new Error("A seller safety finding must include the observed payment challenge.");
+    }
+    if (record.listedPriceUnits !== seller.priceUnits || record.askedPriceUnits !== record.observedChallenge.amount) {
+      throw new Error("The reported price evidence must match the seller's current listing and observed challenge.");
+    }
+    if (record.scamMismatch === "price_mismatch") {
+      if (record.observedChallenge.amount === seller.priceUnits ||
+        record.observedChallenge.payTo.toLowerCase() !== seller.payTo.toLowerCase()) {
+        throw new Error("The observed challenge does not prove a listed-price mismatch.");
+      }
+    } else if (record.scamMismatch === "recipient_mismatch") {
+      if (record.observedChallenge.amount !== seller.priceUnits ||
+        record.observedChallenge.payTo.toLowerCase() === seller.payTo.toLowerCase()) {
+        throw new Error("The observed challenge does not prove a payment-recipient mismatch.");
+      }
+    } else {
+      throw new Error("scamMismatch is not supported.");
+    }
+    if (record.observedChallenge.network !== seller.network ||
+      record.observedChallenge.asset.toLowerCase() !== seller.asset.toLowerCase()) {
+      throw new Error("The observed challenge network and asset must match the seller listing.");
+    }
+    scamMismatch = record.scamMismatch as LedgerRecord["scamMismatch"];
+    observedChallenge = {
+      amount: record.observedChallenge.amount,
+      network: record.observedChallenge.network,
+      asset: record.observedChallenge.asset,
+      payTo: record.observedChallenge.payTo
+    };
+  } else if (record.observedChallenge !== undefined) {
+    throw new Error("observedChallenge requires a supported scamMismatch.");
   }
 
   let txHash: string | null = null;
@@ -100,6 +147,23 @@ export function parseLedgerRecord(value: unknown): LedgerRecord {
 
     txHash = record.txHash.toLowerCase();
     explorerUrl = `https://sepolia.basescan.org/tx/${txHash}`;
+  } else if (record.status === "settlement unknown") {
+    if (record.amountPaidUnits !== "0") {
+      throw new Error("A settlement with unknown outcome must not be counted as paid.");
+    }
+    if (record.txHash !== null && record.txHash !== undefined) {
+      if (typeof record.txHash !== "string" || !/^0x[a-fA-F0-9]{64}$/.test(record.txHash)) {
+        throw new Error("An unknown settlement transaction hash must be a valid EVM hash.");
+      }
+      if (seller.network !== "eip155:84532" || record.askedPriceUnits !== seller.priceUnits || record.listedPriceUnits !== seller.priceUnits) {
+        throw new Error("An unknown settlement hash must match the registered Base Sepolia seller and price.");
+      }
+      if (record.buyerAddress.toLowerCase() === seller.payTo.toLowerCase()) {
+        throw new Error("Buyer and seller payment addresses must be different.");
+      }
+      txHash = record.txHash.toLowerCase();
+      explorerUrl = `https://sepolia.basescan.org/tx/${txHash}`;
+    }
   } else if (record.amountPaidUnits !== "0" || (record.txHash !== null && record.txHash !== undefined)) {
     throw new Error("An uncharged or unverified call must have amountPaidUnits 0 and no transaction hash.");
   }
@@ -119,7 +183,9 @@ export function parseLedgerRecord(value: unknown): LedgerRecord {
     explorerUrl,
     status: record.status as LedgerRecord["status"],
     latencyMs: Number(record.latencyMs),
-    ...(record.reason === undefined ? {} : { reason: record.reason })
+    ...(record.reason === undefined ? {} : { reason: record.reason }),
+    ...(record.sellerResponded === undefined ? {} : { sellerResponded: record.sellerResponded }),
+    ...(scamMismatch ? { scamMismatch, observedChallenge } : {})
   };
 }
 

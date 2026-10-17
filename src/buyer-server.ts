@@ -2,7 +2,7 @@ import express from "express";
 import path from "node:path";
 import { createServer as createHttpServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
-import { executeTask } from "./buyer/execution.js";
+import { confirmBudgetDecision, prepareTask } from "./buyer/execution.js";
 import { loadLocalEnvironment, readLocalTlsFiles } from "./config.js";
 
 loadLocalEnvironment();
@@ -40,11 +40,22 @@ app.get("/api/config", (_request, response) => {
 
 app.post("/api/execute", async (request, response) => {
   try {
-    const report = await executeTask(request.body?.task, request.body?.budgetUnits, request.body?.maxConcurrency);
-    response.json(report);
+    const result = await prepareTask(request.body?.task, request.body?.budgetUnits, request.body?.maxConcurrency, request.body?.demoSellerId);
+    response.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Scout could not start this task.";
     response.status(400).json({ error: message });
+  }
+});
+
+app.post("/api/execute/confirm", async (request, response) => {
+  try {
+    const report = await confirmBudgetDecision(request.body?.proposalId, request.body?.choice);
+    response.json(report);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Scout could not confirm this budget decision.";
+    const status = /expired|changed|already been confirmed/i.test(message) ? 409 : 400;
+    response.status(status).json({ error: message });
   }
 });
 

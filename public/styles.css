@@ -50,6 +50,11 @@ input:focus, select:focus, textarea:focus { outline: 3px solid #dce5ff; border-c
 .service-card { display: flex; flex-direction: column; gap: 12px; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
 .card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .service-card h3 { margin: 0; font-size: 17px; }
+.trust-tag { display: inline-block; margin: 5px 6px 0 0; border-radius: 999px; padding: 3px 9px; background: #eef2f6; color: #475467; font-size: 11px; font-weight: 700; }
+.trust-active { background: #e4f7ec; color: #17663a; }
+.trust-quarantined, .trust-blacklisted { background: #fff1f0; color: #a32b22; }
+.demo-warning { margin: 0; padding: 9px 11px; border: 1px solid #f2c078; border-radius: 8px; background: #fff9ef; color: #8a4b08; font-size: 12px; }
+.service-card:has(.trust-quarantined), .service-card:has(.trust-blacklisted) { border-color: #f3b8b3; background: #fffafa; }
 .category-tag { display: inline-block; border-radius: 999px; padding: 3px 9px; background: #eef2ff; color: #3849a5; font-size: 11px; font-weight: 700; text-transform: capitalize; }
 .price { white-space: nowrap; font-size: 17px; font-weight: 750; }
 .service-description { margin: 0; color: var(--muted); font-size: 13px; }
@@ -76,8 +81,8 @@ th { background: var(--soft); color: #475467; font-size: 11px; text-transform: u
 tbody tr:last-child td { border-bottom: 0; }
 .status-tag { display: inline-block; border-radius: 999px; padding: 3px 8px; background: #f2f4f7; font-size: 11px; }
 .status-paid, .status-completed-free { background: #e4f7ec; color: #17663a; }
-.status-unverified-paid { background: #fff1d6; color: #8a4b08; }
-.status-refused, .status-failed-and-not-charged, .status-paid-output-rejected, .status-settlement-unknown { background: #fff1f0; color: #a32b22; }
+.status-unverified-paid, .status-settlement-unknown { background: #fff1d6; color: #8a4b08; }
+.status-refused, .status-failed-and-not-charged, .status-paid-output-rejected { background: #fff1f0; color: #a32b22; }
 td a { color: var(--accent); }
 footer { padding: 24px; border-top: 1px solid var(--line); color: var(--muted); text-align: center; font-size: 12px; }
 @media (max-width: 700px) {

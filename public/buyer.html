@@ -28,6 +28,18 @@
         <p id="marketplace-status" class="connection-help">Loading Marketplace connection…</p>
       </section>
 
+      <details class="scam-demo-card">
+        <summary id="scam-demo-title">Scam safety demo</summary>
+        <div class="scam-demo-content">
+          <p>Choose a test. Scout calls that demo seller first, blocks its mismatched payment request, then tries a safe seller if your budget allows.</p>
+          <div class="scam-demo-actions">
+            <button class="button button-light" type="button" data-scam-test="demo-price-inflator" disabled>Test price scam</button>
+            <button class="button button-light" type="button" data-scam-test="demo-recipient-switch" disabled>Test different pay-to</button>
+          </div>
+          <p id="scam-demo-help" class="connection-help">These live tests need paid mode. The scam seller will receive no payment. A safe fallback may use test USDC within your budget.</p>
+        </div>
+      </details>
+
       <section class="conversation" aria-label="Scout task runner">
         <form id="task-form" class="task-form">
           <label for="task-input">Your task</label>
@@ -51,6 +63,18 @@
           </div>
         </form>
         <p id="run-status" class="message" role="status"></p>
+
+        <section id="budget-decision" class="budget-decision" hidden aria-live="polite" aria-labelledby="budget-decision-title">
+          <h2 id="budget-decision-title">This plan is over your budget</h2>
+          <p id="budget-decision-summary"></p>
+          <p id="budget-extension-note" class="connection-help"></p>
+          <h3>Work that may not fit</h3>
+          <ol id="budget-shortfall-steps" class="budget-shortfall-steps"></ol>
+          <div class="budget-decision-actions">
+            <button id="extend-budget-button" class="button" type="button">Extend to estimated total</button>
+            <button id="continue-budget-button" class="button button-light" type="button">Continue with current budget</button>
+          </div>
+        </section>
 
         <section id="run-report" class="run-report" hidden aria-live="polite" aria-labelledby="report-title">
           <div class="report-heading">

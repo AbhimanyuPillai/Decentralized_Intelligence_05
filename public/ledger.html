@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Call Ledger · Agent Marketplace</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/ledger.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/">Agent Marketplace · Call Ledger</a>
+      <a id="marketplace-link" class="button button-light" href="http://localhost:3000/">Back to Marketplace</a>
+      <span class="network-pill">Base Sepolia · Testnet</span>
+    </header>
+    <main>
+      <section class="intro">
+        <p class="eyebrow">Activity</p>
+        <h1>Call ledger</h1>
+        <p>Review seller calls, payment status, and verified transaction receipts.</p>
+      </section>
+      <section class="section">
+        <div class="section-heading">
+          <div><p class="eyebrow">Recent calls</p><h2>Task and payment history</h2></div>
+          <button id="refresh-ledger" class="button button-light" type="button">Refresh</button>
+        </div>
+        <p id="ledger-message" class="message" role="status"></p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Time</th><th>Task ID</th><th>Buyer</th><th>Seller</th><th>Listed</th><th>Asked</th><th>Paid</th><th>Status</th><th>Details</th><th>Latency</th><th>Receipt</th></tr>
+            </thead>
+            <tbody id="ledger-rows"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+    <footer>Agent Marketplace · Testnet prototype</footer>
+  </body>
+</html>

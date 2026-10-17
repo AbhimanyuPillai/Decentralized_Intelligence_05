@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { LedgerRecord, Reputation, SellerListing } from "../types.js";
+import type { LedgerRecord, Reputation, SellerListing, SellerTrustStatus } from "../types.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const configuredDatabasePath = process.env.MARKETPLACE_DATABASE_PATH?.trim();
@@ -27,7 +27,8 @@ database.exec(`
     status TEXT NOT NULL,
     latency_ms INTEGER NOT NULL,
     record_json TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    scout_trusted INTEGER NOT NULL DEFAULT 0
   );
 
   CREATE INDEX IF NOT EXISTS ledger_seller_id_idx ON ledger(seller_id);
@@ -37,6 +38,11 @@ database.exec(`
       AND json_extract(record_json, '$.chainVerified') = 1;
   CREATE INDEX IF NOT EXISTS ledger_task_id_idx ON ledger (json_extract(record_json, '$.taskId'));
 `);
+
+const ledgerColumns = database.pragma("table_info(ledger)") as Array<{ name: string }>;
+if (!ledgerColumns.some((column) => column.name === "scout_trusted")) {
+  database.exec("ALTER TABLE ledger ADD COLUMN scout_trusted INTEGER NOT NULL DEFAULT 0");
+}
 
 const sellerColumns = database.pragma("table_info(sellers)") as Array<{ name: string }>;
 if (!sellerColumns.some((column) => column.name === "is_listed")) {
@@ -52,6 +58,9 @@ if (!sellerColumns.some((column) => column.name === "registration_source")) {
       AND json_extract(listing_json, '$.paymentRequired') = 0
       AND lower(json_extract(listing_json, '$.payTo')) = '0x0000000000000000000000000000000000000001'
   `);
+}
+if (!sellerColumns.some((column) => column.name === "reviewed_mismatch_count")) {
+  database.exec("ALTER TABLE sellers ADD COLUMN reviewed_mismatch_count INTEGER NOT NULL DEFAULT 0");
 }
 
 const findSeller = database.prepare(
@@ -74,8 +83,8 @@ const insertWebsiteSeller = database.prepare(`
 `);
 
 const insertLedger = database.prepare(`
-  INSERT INTO ledger (id, seller_id, status, latency_ms, record_json, created_at)
-  VALUES (@id, @sellerId, @status, @latencyMs, @recordJson, @now)
+  INSERT INTO ledger (id, seller_id, status, latency_ms, record_json, created_at, scout_trusted)
+  VALUES (@id, @sellerId, @status, @latencyMs, @recordJson, @now, @scoutTrusted)
 `);
 
 const readLedger = database.prepare(`
@@ -166,20 +175,26 @@ export function hideWebsiteListingsFromOtherPaymentMode(paymentsEnabled: boolean
 }
 
 export function calculateReputation(sellerId: string): Reputation {
-  const calls = database
-    .prepare(`
-      SELECT status, latency_ms
-      FROM ledger
-      WHERE seller_id = ?
-        AND (
-          status IN ('paid', 'paid, output rejected')
-          AND json_extract(record_json, '$.chainVerified') = 1
-        )
-    `)
-    .all(sellerId) as Array<{ status: string; latency_ms: number }>;
-
-  const successfulCalls = calls.filter((call) => call.status === "paid").length;
+  const rows = database.prepare(`
+    SELECT status, latency_ms, record_json, scout_trusted
+    FROM ledger
+    WHERE seller_id = ?
+  `).all(sellerId) as Array<{ status: string; latency_ms: number; record_json: string; scout_trusted: number }>;
+  // Only authenticated Scout reports include its output-schema validation result.
+  const calls = rows.filter((row) => row.scout_trusted === 1);
+  const successfulCalls = calls.filter((call) =>
+    (call.status === "paid" && JSON.parse(call.record_json).chainVerified === true) ||
+    (call.status === "completed free" && call.scout_trusted === 1)
+  ).length;
+  const availableCalls = calls.filter((call) => {
+    const record = JSON.parse(call.record_json) as LedgerRecord;
+    return record.sellerResponded === true || record.status === "paid" || record.status === "paid, output rejected";
+  }).length;
   const latencies = calls
+    .filter((call) => {
+      const record = JSON.parse(call.record_json) as LedgerRecord;
+      return record.sellerResponded === true || record.status === "paid" || record.status === "paid, output rejected";
+    })
     .map((call) => call.latency_ms)
     .sort((left, right) => left - right);
   const middle = Math.floor(latencies.length / 2);
@@ -190,24 +205,53 @@ export function calculateReputation(sellerId: string): Reputation {
         ? (latencies[middle - 1] + latencies[middle]) / 2
         : latencies[middle];
 
+  const mismatchRows = database.prepare(`
+    SELECT id
+    FROM ledger
+    WHERE seller_id = ? AND scout_trusted = 1
+      AND json_extract(record_json, '$.scamMismatch') IN ('price_mismatch', 'recipient_mismatch')
+  `).all(sellerId) as Array<{ task_id: string }>;
+
   return {
     totalCalls: calls.length,
     successfulCalls,
     successRatePercent:
       calls.length === 0 ? null : (successfulCalls / calls.length) * 100,
+    availabilityPercent: calls.length === 0 ? null : (availableCalls / calls.length) * 100,
+    mismatchCount: mismatchRows.length,
     medianLatencyMs
   };
 }
 
-export function saveLedgerRecord(record: LedgerRecord): void {
+export function saveLedgerRecord(record: LedgerRecord, scoutTrusted = false): void {
   insertLedger.run({
     id: record.id,
     sellerId: record.sellerId,
     status: record.status,
     latencyMs: record.latencyMs,
     recordJson: JSON.stringify(record),
-    now: new Date().toISOString()
+    now: new Date().toISOString(),
+    scoutTrusted: scoutTrusted ? 1 : 0
   });
+}
+
+export function getSellerTrustStatus(sellerId: string): SellerTrustStatus {
+  const mismatchCount = calculateReputation(sellerId).mismatchCount;
+  const row = database.prepare("SELECT reviewed_mismatch_count FROM sellers WHERE id = ?").get(sellerId) as
+    | { reviewed_mismatch_count: number }
+    | undefined;
+  const unreviewedMismatchCount = Math.max(0, mismatchCount - (row?.reviewed_mismatch_count ?? 0));
+  if (unreviewedMismatchCount >= 2) return "blacklisted";
+  if (unreviewedMismatchCount === 1) return "quarantined";
+  return calculateReputation(sellerId).successfulCalls > 0 ? "active" : "unproven";
+}
+
+export function reinstateSellerAfterReview(sellerId: string): boolean {
+  const mismatchCount = calculateReputation(sellerId).mismatchCount;
+  const result = database.prepare(`
+    UPDATE sellers SET reviewed_mismatch_count = ? WHERE id = ? AND is_listed = 1
+  `).run(mismatchCount, sellerId);
+  return result.changes > 0;
 }
 
 export function listLedgerRecords(limit = 100, taskId?: string): LedgerRecord[] {

@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { timingSafeEqual } from "node:crypto";
 import express from "express";
 import { createServer as createHttpServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
@@ -15,13 +16,15 @@ import { mountHindiSummary, hindiSummaryDefinition } from "./sellers/hindi-summa
 import { mountFakeJobsScraper, fakeJobsScraperDefinition } from "./sellers/fakejobs-scraper/routes.js";
 import { mountJobFacts, jobFactsDefinition } from "./sellers/job-facts/routes.js";
 import { mountJobSummary, jobSummaryDefinition } from "./sellers/job-summary/routes.js";
+import { mountDemoPriceInflator, demoPriceInflatorDefinition } from "./sellers/demo-price-inflator/routes.js";
+import { mountDemoRecipientSwitch, demoRecipientSwitchDefinition } from "./sellers/demo-recipient-switch/routes.js";
 import { createSellerManifest } from "./sellers/shared/paidJsonEndpoint.js";
-import { hideAutoSeededFreeListings, hideWebsiteListingsFromOtherPaymentMode, listLedgerRecords, saveLedgerRecord } from "./marketplace/database.js";
-import { LedgerVerificationUnavailableError, parseLedgerRecord, verifyPaidLedgerRecord } from "./marketplace/ledger.js";
+import { hideAutoSeededFreeListings, hideWebsiteListingsFromOtherPaymentMode } from "./marketplace/database.js";
 import {
   findSeller,
   registerSeller,
-  searchSellers
+  searchSellers,
+  reinstateSeller
 } from "./marketplace/registry.js";
 import type { SellerRegistration } from "./types.js";
 import { loadLocalEnvironment, readLocalTlsFiles } from "./config.js";
@@ -45,6 +48,13 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 
 function isRegistryApiPath(pathname: string): boolean {
   return pathname === "/api/registry" || pathname.startsWith("/api/registry/");
+}
+
+function matchesSecret(configured: string | undefined, supplied: string | undefined): boolean {
+  if (!configured || !supplied) return false;
+  const expected = Buffer.from(configured);
+  const actual = Buffer.from(supplied);
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
 app.use(express.json({ limit: "256kb" }));
@@ -82,6 +92,8 @@ mountHindiSummary(app);
 mountFakeJobsScraper(app);
 mountJobFacts(app);
 mountJobSummary(app);
+mountDemoPriceInflator(app);
+mountDemoRecipientSwitch(app);
 const hiddenAutoSeededListings = hideAutoSeededFreeListings();
 if (hiddenAutoSeededListings > 0) {
   console.info(`Unlisted ${hiddenAutoSeededListings} automatic free-test seller listing(s).`);
@@ -103,7 +115,9 @@ const builtInSellerDefinitions = [
   hindiSummaryDefinition,
   fakeJobsScraperDefinition,
   jobFactsDefinition,
-  jobSummaryDefinition
+  jobSummaryDefinition,
+  demoPriceInflatorDefinition,
+  demoRecipientSwitchDefinition
 ];
 if (process.env.NODE_ENV !== "production" || publicBaseUrl) {
   for (const definition of builtInSellerDefinitions) {
@@ -119,6 +133,13 @@ if (process.env.NODE_ENV !== "production" || publicBaseUrl) {
 
 app.get("/api/config", (_request, response) => {
   response.json({ paymentsEnabled: process.env.SELLER_PAYMENTS_ENABLED === "true" });
+});
+app.use((request, response, next) => {
+  if (request.path === "/ledger.html" || request.path === "/ledger.js") {
+    response.sendStatus(404);
+    return;
+  }
+  next();
 });
 app.use(express.static(path.join(process.cwd(), "public")));
 
@@ -161,7 +182,8 @@ app.get("/api/registry", (request, response) => {
       category: category ? String(category) : undefined,
       maxPriceUnits: maxPriceUnits ? String(maxPriceUnits) : undefined,
       query: query ? String(query) : undefined,
-      ready: ready === undefined ? undefined : ready === "true"
+      ready: ready === undefined ? undefined : ready === "true",
+      includeBlocked: request.query.includeBlocked === "true"
     })
   );
 });
@@ -196,55 +218,18 @@ app.post("/api/registry", (request, response) => {
   }
 });
 
-// Store one complete buyer-reported call outcome.
-app.post("/api/ledger", async (request, response) => {
-  let record: ReturnType<typeof parseLedgerRecord>;
-  try {
-    record = parseLedgerRecord(request.body);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Invalid call record.";
-    response.status(400).json({ error: message });
+app.post("/api/registry/:sellerId/reinstate", (request, response) => {
+  const configuredToken = process.env.MARKETPLACE_ADMIN_TOKEN?.trim();
+  const suppliedToken = request.get("authorization")?.replace(/^Bearer\s+/i, "").trim();
+  if (!matchesSecret(configuredToken, suppliedToken)) {
+    response.status(403).json({ error: "Seller reinstatement requires the Marketplace admin token." });
     return;
   }
-
-  try {
-    await verifyPaidLedgerRecord(record);
-    const verifiedRecord = record.status === "paid" || record.status === "paid, output rejected"
-      ? { ...record, chainVerified: true }
-      : record;
-    saveLedgerRecord(verifiedRecord);
-    response.status(201).json(verifiedRecord);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not save call record.";
-    if (error instanceof LedgerVerificationUnavailableError) {
-      response.status(503).json({ error: message });
-      return;
-    }
-    if (message.includes("UNIQUE constraint failed: ledger.id")) {
-      response.status(409).json({ error: "A call record with this id already exists." });
-      return;
-    }
-    if (message.includes("ledger_tx_hash_unique_idx")) {
-      response.status(409).json({ error: "This transaction is already recorded in the Marketplace ledger." });
-      return;
-    }
-    console.error("Could not save call record.", message);
-    response.status(500).json({ error: "Could not save call record." });
-  }
-});
-
-app.get("/api/ledger", (request, response) => {
-  const requestedLimit = Number(request.query.limit ?? 100);
-  const limit = Number.isInteger(requestedLimit)
-    ? Math.min(Math.max(requestedLimit, 1), 500)
-    : 100;
-
-  const taskId = request.query.taskId;
-  if (taskId !== undefined && (typeof taskId !== "string" || taskId.length > 100)) {
-    response.status(400).json({ error: "taskId must be at most 100 characters." });
+  if (!reinstateSeller(request.params.sellerId)) {
+    response.status(404).json({ error: "Seller not found." });
     return;
   }
-  response.json(listLedgerRecords(limit, typeof taskId === "string" ? taskId : undefined));
+  response.json({ seller: findSeller(request.params.sellerId), reviewed: true });
 });
 
 const server = useLocalHttp
