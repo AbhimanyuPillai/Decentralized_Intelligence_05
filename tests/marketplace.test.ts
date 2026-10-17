@@ -247,3 +247,19 @@ test("receipt replay demo services share the same listed price and payment recip
   assert.equal(demoReceiptSecondDefinition.priceUnits, "2000");
   assert.equal(demoReceiptFirstDefinition.payToEnv, demoReceiptSecondDefinition.payToEnv);
 });
+
+test("compute failure demo is built in and fails with a clear internal error", async () => {
+  const { demoComputeFailureDefinition } = await import("../src/sellers/demo-compute-failure/routes.js");
+  assert.equal(demoComputeFailureDefinition.id, "demo-compute-failure");
+  assert.equal(demoComputeFailureDefinition.priceUnits, "2000");
+  assert.equal(demoComputeFailureDefinition.demoFailureType, "compute_error");
+  await assert.rejects(demoComputeFailureDefinition.handle({ page: 1 }), /Simulated internal compute failure/);
+});
+
+test("website registrations cannot claim built-in demo failure metadata", () => {
+  const seller = registerSeller({
+    ...listing("website-failure-demo", "2000", "0x7777777777777777777777777777777777777777"),
+    demoFailureType: "compute_error"
+  });
+  assert.equal(seller.demoFailureType, undefined);
+});

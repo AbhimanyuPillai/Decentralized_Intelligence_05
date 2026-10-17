@@ -8,6 +8,7 @@ import { paymentMiddleware } from "@x402/express";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { privateKeyToAccount } from "viem/accounts";
 import { claimPayment, fingerprintPayment, finishPayment } from "./replayStore.js";
+import type { DemoFailureType } from "../../types.js";
 
 export const BASE_SEPOLIA = "eip155:84532" as const;
 export const BASE_SEPOLIA_USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
@@ -38,6 +39,7 @@ export interface SellerListingDefinition {
   challengePayTo?: (listedPayTo: string) => string;
   demoScamType?: "price_mismatch" | "recipient_mismatch";
   demoReplayRole?: "first" | "second";
+  demoFailureType?: DemoFailureType;
   onAuthorizationClaimed?: (request: Request) => void;
   onPaymentReplayRejected?: (request: Request, reason: string) => void;
   inputSchema: Record<string, unknown>;
@@ -58,6 +60,8 @@ export function createSellerManifest(
   const readinessReason = !serviceReady
     ? definition.demoScamType
       ? "Demo scam sellers require paid mode so Scout can inspect the deliberately mismatched payment challenge."
+      : definition.demoFailureType
+        ? "The seller failure demo requires paid mode."
       : `${definition.name} service configuration is incomplete.`
     : paymentsEnabled && !isWalletAddress(payTo)
       ? `Set ${definition.payToEnv} or SELLER_PRIVATE_KEY to enable paid calls.`
@@ -78,6 +82,7 @@ export function createSellerManifest(
     payTo: paymentsEnabled && payTo ? payTo : "0x0000000000000000000000000000000000000001",
     ...(definition.demoScamType ? { demoScamType: definition.demoScamType } : {}),
     ...(definition.demoReplayRole ? { demoReplayRole: definition.demoReplayRole } : {}),
+    ...(definition.demoFailureType ? { demoFailureType: definition.demoFailureType } : {}),
     inputSchema: definition.inputSchema,
     outputSchema: definition.outputSchema,
     reputation: { totalCalls: 0, successfulCalls: 0, successRatePercent: null, medianLatencyMs: null, availabilityPercent: null, mismatchCount: 0 }
@@ -311,6 +316,13 @@ export function mountPaidJsonEndpoint(app: Express, definition: SellerListingDef
     } catch (error) {
       response.locals.paidSeller!.workFailed = true;
       console.error(`${definition.id} could not complete this request:`, error instanceof Error ? error.message : "unknown error");
+      if (definition.demoFailureType === "compute_error") {
+        response.status(500).json({
+            code: "DEMO_COMPUTE_FAILURE",
+            error: "The demo seller failed during internal work. No service result was produced."
+        });
+        return;
+      }
       response.status(500).json({ error: `${definition.name} could not complete this request.` });
     }
   };

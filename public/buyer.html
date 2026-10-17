@@ -29,13 +29,14 @@
       </section>
 
       <details class="scam-demo-card">
-        <summary id="scam-demo-title">Scam safety demo</summary>
+        <summary id="scam-demo-title">Safety demos</summary>
         <div class="scam-demo-content">
-          <p>Choose a test. Scam tests show Scout blocking unsafe payment requests. Receipt replay makes one 0.002 USDC test payment, then shows another seller rejecting the exact same receipt.</p>
+          <p>Choose a test. Scam tests block unsafe payment requests. Receipt replay makes one 0.002 USDC test payment, then shows another seller rejecting the same receipt. Seller failure signs a test request, then shows the seller failing before settlement and Scout trying a safe fallback.</p>
           <div class="scam-demo-actions">
             <button class="button button-light" type="button" data-scam-test="demo-price-inflator" disabled>Test price scam</button>
             <button class="button button-light" type="button" data-scam-test="demo-recipient-switch" disabled>Test different pay-to</button>
             <button class="button button-light" type="button" data-replay-test disabled>Test receipt replay</button>
+            <button class="button button-light" type="button" data-failure-test disabled>Test seller failure</button>
           </div>
           <p id="scam-demo-help" class="connection-help">These live tests need paid mode. The scam seller will receive no payment. A safe fallback may use test USDC within your budget.</p>
         </div>

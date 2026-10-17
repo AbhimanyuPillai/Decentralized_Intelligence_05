@@ -65,6 +65,7 @@
       "trustStatus": { "type": "string", "enum": ["unproven", "active", "quarantined", "blacklisted"] },
       "demoScamType": { "type": "string", "enum": ["price_mismatch", "recipient_mismatch"] },
       "demoReplayRole": { "type": "string", "enum": ["first", "second"] },
+      "demoFailureType": { "type": "string", "enum": ["compute_error"] },
       "rankingFactors": {
         "type": "object",
         "properties": {

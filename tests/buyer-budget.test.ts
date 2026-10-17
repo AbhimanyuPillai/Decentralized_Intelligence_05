@@ -33,7 +33,7 @@ let registryPriceOverride: string | undefined;
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (input, init) => {
   const url = String(input);
-  if (url === "http://localhost:3000/api/registry") {
+  if (url.startsWith("http://localhost:3000/api/registry")) {
     const listings = sellers.map((seller, index) => index === 0 && registryPriceOverride
       ? { ...seller, priceUnits: registryPriceOverride }
       : seller);
@@ -177,5 +177,195 @@ test("the selected live scam demo is planned first without asking the model or c
   } finally {
     sellers.pop();
     process.env.SELLER_PAYMENTS_ENABLED = originalMode;
+  }
+});
+
+test("a quarantined scam demo can be run explicitly without signing and then falls back", async () => {
+  const previousFetch = globalThis.fetch;
+  const previousMode = process.env.SELLER_PAYMENTS_ENABLED;
+  process.env.SELLER_PAYMENTS_ENABLED = "true";
+
+  const demo = {
+    ...sellers[0]!,
+    id: "demo-price-inflator",
+    name: "Demo Price Inflator",
+    endpointUrl: "http://localhost:3000/api/sellers/demo-price-inflator",
+    priceUnits: "2000",
+    trustStatus: "quarantined",
+    demoScamType: "price_mismatch",
+    inputSchema: {
+      type: "object",
+      properties: { page: { type: "integer", minimum: 1 } },
+      required: ["page"],
+      additionalProperties: false
+    }
+  };
+  const fallback = {
+    ...sellers[0]!,
+    id: "safe-fallback",
+    name: "Safe Fallback",
+    endpointUrl: "http://localhost:3000/api/sellers/safe-fallback",
+    priceUnits: "0",
+    paymentRequired: false,
+    inputSchema: demo.inputSchema,
+    outputSchema: { type: "object" }
+  };
+  let signedDemoRequest = false;
+  const ledgerRecords: Array<Record<string, unknown>> = [];
+  const paymentRequiredHeader = Buffer.from(JSON.stringify({
+    x402Version: 2,
+    accepts: [{
+      scheme: "exact",
+      network,
+      amount: "20000",
+      asset,
+      payTo: demo.payTo,
+      maxTimeoutSeconds: 60,
+      extra: { assetTransferMethod: "eip3009", name: "USDC", version: "2" }
+    }]
+  })).toString("base64");
+
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.startsWith("http://localhost:3000/api/registry")) return Response.json([demo, fallback]);
+    if (url === demo.endpointUrl) {
+      if (new Headers(init?.headers).has("PAYMENT-SIGNATURE")) signedDemoRequest = true;
+      return new Response(JSON.stringify({ error: "Payment required" }), {
+        status: 402,
+        headers: { "content-type": "application/json", "PAYMENT-REQUIRED": paymentRequiredHeader }
+      });
+    }
+    if (url === fallback.endpointUrl) return Response.json({ books: [] });
+    if (url === "http://localhost:3002/api/ledger") {
+      ledgerRecords.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return Response.json({}, { status: 201 });
+    }
+    if (url === "https://api.groq.com/openai/v1/chat/completions") {
+      return Response.json({ choices: [{ message: { content: JSON.stringify({ finalAnswer: "Safe fallback completed." }) } }] });
+    }
+    throw new Error(`Unexpected test request: ${url}`);
+  };
+
+  try {
+    const report = await prepareTask("Test price protection", "2000", 1, "demo-price-inflator");
+    assert.equal("type" in report, false);
+    if ("type" in report) return;
+    assert.equal(report.steps[0]?.status, "refused");
+    assert.equal(report.steps[0]?.scamMismatch, "price_mismatch");
+    assert.equal(report.steps[0]?.amountPaidUnits, "0");
+    assert.equal(signedDemoRequest, false, "Scout must stop the inflated challenge before signing");
+    assert.equal(report.steps[1]?.sellerId, "safe-fallback");
+    assert.equal(report.steps[1]?.status, "completed free");
+    assert.equal(report.success, true);
+    assert.equal(ledgerRecords[0]?.scamMismatch, "price_mismatch");
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousMode === undefined) delete process.env.SELLER_PAYMENTS_ENABLED;
+    else process.env.SELLER_PAYMENTS_ENABLED = previousMode;
+  }
+});
+
+test("the compute failure demo records no charge and recovers with a safe seller", async () => {
+  const previousFetch = globalThis.fetch;
+  const previousMode = process.env.SELLER_PAYMENTS_ENABLED;
+  const previousKey = process.env.BUYER_PRIVATE_KEY;
+  process.env.SELLER_PAYMENTS_ENABLED = "true";
+  process.env.BUYER_PRIVATE_KEY = `0x${"1".repeat(64)}`;
+
+  const failureDemo = {
+    ...sellers[0]!,
+    id: "demo-compute-failure",
+    name: "Demo Compute Failure",
+    endpointUrl: "http://localhost:3000/sellers/demo-compute-failure/scrape",
+    priceUnits: "2000",
+    demoFailureType: "compute_error",
+    inputSchema: {
+      type: "object",
+      properties: { page: { type: "integer", minimum: 1 } },
+      required: ["page"],
+      additionalProperties: false
+    }
+  };
+  const fallback = {
+    ...sellers[0]!,
+    id: "safe-fallback",
+    name: "Safe Fallback",
+    endpointUrl: "http://localhost:3000/sellers/safe-fallback/scrape",
+    priceUnits: "0",
+    paymentRequired: false,
+    inputSchema: failureDemo.inputSchema,
+    outputSchema: { type: "object" }
+  };
+  const ledgerRecords: Array<Record<string, unknown>> = [];
+  let failureCalls = 0;
+  let signedDemoRequest = false;
+  const requirement = {
+    scheme: "exact",
+    network,
+    amount: "2000",
+    asset,
+    payTo: failureDemo.payTo,
+    maxTimeoutSeconds: 60,
+    extra: { assetTransferMethod: "eip3009", name: "USDC", version: "2" }
+  };
+  const paymentRequiredHeader = Buffer.from(JSON.stringify({
+    x402Version: 2,
+    resource: { url: failureDemo.endpointUrl, description: "Test", mimeType: "application/json" },
+    accepts: [requirement]
+  })).toString("base64");
+
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.startsWith("http://localhost:3000/api/registry")) return Response.json([failureDemo, fallback]);
+    if (url === failureDemo.endpointUrl) {
+      failureCalls += 1;
+      const hasSignature = new Headers(init?.headers).has("PAYMENT-SIGNATURE");
+      if (!hasSignature) {
+        return new Response(JSON.stringify({ error: "Payment required" }), {
+          status: 402,
+          headers: { "content-type": "application/json", "PAYMENT-REQUIRED": paymentRequiredHeader }
+        });
+      }
+      signedDemoRequest = true;
+      return Response.json({
+        code: "DEMO_COMPUTE_FAILURE",
+        error: "The demo seller failed during internal work. No service result was produced."
+      }, { status: 500 });
+    }
+    if (url === fallback.endpointUrl) return Response.json({ books: [] });
+    if (url === "http://localhost:3002/api/ledger") {
+      ledgerRecords.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return Response.json({}, { status: 201 });
+    }
+    if (url === "https://api.groq.com/openai/v1/chat/completions") {
+      return Response.json({ choices: [{ message: { content: JSON.stringify({ finalAnswer: "Fallback completed the task." }) } }] });
+    }
+    throw new Error(`Unexpected test request: ${url}`);
+  };
+
+  try {
+    const report = await prepareTask("Show failure recovery", "2000", 1, "demo-compute-failure");
+    assert.equal("type" in report, false);
+    if ("type" in report) return;
+    assert.equal(signedDemoRequest, true, "Scout should sign the demo's x402 challenge");
+    assert.equal(failureCalls, 2, "the demo seller should receive the initial request and signed request");
+    assert.equal(report.steps[0]?.status, "failed and not charged");
+    assert.equal(report.steps[0]?.amountPaidUnits, "0");
+    assert.equal(report.steps[0]?.txHash, null);
+    assert.match(report.steps[0]?.reason ?? "", /no USDC was transferred/i);
+    assert.equal(report.steps[1]?.sellerId, "safe-fallback");
+    assert.equal(report.steps[1]?.status, "completed free");
+    assert.equal(report.spentUnits, "0");
+    assert.equal(report.success, true);
+    assert.equal(ledgerRecords.length, 2);
+    assert.equal(ledgerRecords[0]?.status, "failed and not charged");
+    assert.equal(ledgerRecords[0]?.amountPaidUnits, "0");
+    assert.equal(ledgerRecords[0]?.txHash, null);
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousMode === undefined) delete process.env.SELLER_PAYMENTS_ENABLED;
+    else process.env.SELLER_PAYMENTS_ENABLED = previousMode;
+    if (previousKey === undefined) delete process.env.BUYER_PRIVATE_KEY;
+    else process.env.BUYER_PRIVATE_KEY = previousKey;
   }
 });

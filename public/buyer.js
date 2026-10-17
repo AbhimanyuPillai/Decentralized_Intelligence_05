@@ -18,6 +18,7 @@ let paidWalletReady = false;
 let selectedDemoSellerId = null;
 const scamDemoButtons = document.querySelectorAll("[data-scam-test]");
 const replayDemoButton = document.querySelector("[data-replay-test]");
+const failureDemoButton = document.querySelector("[data-failure-test]");
 
 function showStatus(message, kind = "") {
   runStatus.textContent = message;
@@ -81,6 +82,9 @@ function makeCallReport(step) {
       : "Seller requested a pay-to address different from its listing.";
     addText(card, "p", "safety-alert", `Payment blocked—no funds sent. ${mismatchMessage} Scout recorded a scam attempt, quarantined the seller, and will try another eligible seller.`);
   }
+  if (step.sellerId === "demo-compute-failure" && step.status === "failed and not charged") {
+    addText(card, "p", "safety-alert", "No service, no charge. The seller failed before settlement, so Scout released the reserved budget and tried a safe seller if one fit.");
+  }
 
   if (step.txHash && step.explorerUrl) {
     const link = document.createElement("a");
@@ -128,6 +132,7 @@ function setTaskFormDisabled(disabled) {
 function setScamDemoButtonsDisabled(disabled) {
   for (const button of scamDemoButtons) button.disabled = disabled;
   replayDemoButton.disabled = disabled || !paidWalletReady;
+  failureDemoButton.disabled = disabled || !paidModeEnabled || !paidWalletReady;
 }
 
 function showBudgetDecision(decision) {
@@ -216,7 +221,7 @@ async function loadConfig() {
     if (!paidModeEnabled) {
       document.querySelector("#scam-demo-help").textContent = "Turn on paid mode to run these live tests. Scout needs to receive the demo seller's x402 payment request before it can detect the mismatch.";
     } else if (!config.paidReady) {
-      document.querySelector("#scam-demo-help").textContent = "The receipt replay test requires a configured Base Sepolia buyer wallet. The scam checks need paid mode; fallback calls may also use test USDC.";
+      document.querySelector("#scam-demo-help").textContent = "Receipt replay and seller failure tests need a configured Base Sepolia buyer wallet. Scam checks need paid mode; fallback calls may also use test USDC.";
     }
   } catch (error) {
     document.querySelector("#marketplace-status").textContent = error.message;
@@ -245,7 +250,9 @@ taskForm.addEventListener("submit", async (event) => {
   setScamDemoButtonsDisabled(true);
   budgetDecision.hidden = true;
   runReport.hidden = true;
-  showStatus(demoSellerId
+  showStatus(demoSellerId === "demo-compute-failure"
+    ? "Scout is sending the test request to a seller that will fail before settlement, then trying a safe fallback if it can."
+    : demoSellerId
     ? "Scout is contacting the selected scam demo, checking its payment request, and trying a safe fallback if it can."
     : "Scout is checking the Marketplace, planning seller calls, and running the task…");
   try {
@@ -283,6 +290,12 @@ for (const button of scamDemoButtons) {
     taskForm.requestSubmit();
   });
 }
+
+failureDemoButton.addEventListener("click", () => {
+  selectedDemoSellerId = "demo-compute-failure";
+  taskInput.value = "Test Scout's no-service/no-charge handling when a seller fails during internal work, then try a safe seller if the budget allows.";
+  taskForm.requestSubmit();
+});
 
 replayDemoButton.addEventListener("click", async () => {
   setScamDemoButtonsDisabled(true);

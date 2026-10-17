@@ -252,8 +252,9 @@ function getBuyerIdentity(): { address: string; privateKey?: `0x${string}` } {
   return { address: account.address, privateKey };
 }
 
-async function getListings(includeDemo = false): Promise<SellerListing[]> {
-  const response = await request(marketplaceUrl("/api/registry"), {
+async function getListings(includeDemo = false, selectedDemoSellerId?: string): Promise<SellerListing[]> {
+  const registryPath = selectedDemoSellerId ? "/api/registry?includeBlocked=true" : "/api/registry";
+  const response = await request(marketplaceUrl(registryPath), {
     headers: { accept: "application/json" },
     signal: AbortSignal.timeout(15_000),
     redirect: "error"
@@ -273,10 +274,11 @@ async function getListings(includeDemo = false): Promise<SellerListing[]> {
     isObject(item.inputSchema) &&
     isObject(item.outputSchema) &&
     (item.demoReplayRole === undefined || item.demoReplayRole === "first" || item.demoReplayRole === "second") &&
+    (item.demoFailureType === undefined || item.demoFailureType === "compute_error") &&
     item.ready !== false &&
-    item.trustStatus !== "quarantined" &&
-    item.trustStatus !== "blacklisted"
-  ).filter((item) => includeDemo || (!item.demoScamType && !item.demoReplayRole));
+    (item.trustStatus !== "quarantined" && item.trustStatus !== "blacklisted" ||
+      (includeDemo && item.id === selectedDemoSellerId && Boolean(item.demoScamType)))
+  ).filter((item) => includeDemo || (!item.demoScamType && !item.demoReplayRole && !item.demoFailureType));
 }
 
 async function askModel(system: string, user: unknown, timeoutMs = 60_000): Promise<unknown> {
@@ -651,8 +653,15 @@ async function callSeller(
     report.latencyMs = Math.max(0, Math.round(performance.now() - start));
     report.sellerResponded = Boolean(response);
     if (!response.ok) {
+      const confirmedDemoFailure = listing.demoFailureType === "compute_error" &&
+        response.status === 500 && !report.txHash && await response.clone().json().then((body: unknown) =>
+          isObject(body) && body.code === "DEMO_COMPUTE_FAILURE"
+        ).catch(() => false);
       if (status === "settlement unknown") {
         reason ??= "The payment settlement could not be confirmed. Do not retry this call until its status is clear.";
+      } else if (confirmedDemoFailure) {
+        status = "failed and not charged";
+        reason = "The demo seller failed during internal work before settlement. No service was delivered, no USDC was transferred, and the reserved task budget is available for fallback.";
       } else if (paymentWasSigned && !report.txHash && response.status >= 500) {
         status = "settlement unknown";
         reason = "The response failed after payment authorization was signed; settlement could not be verified. Do not retry this call.";
@@ -756,21 +765,25 @@ export async function prepareTask(taskValue: unknown, budgetValue: unknown, conc
     throw new Error("maxConcurrency must be a whole number from 1 to 5.");
   }
   const demoSellerId = demoSellerValue === undefined ? undefined : demoSellerValue;
-  if (demoSellerId !== undefined && !["demo-price-inflator", "demo-recipient-switch"].includes(String(demoSellerId))) {
-    throw new Error("Choose one of Scout's built-in scam demo sellers.");
+  if (demoSellerId !== undefined && !["demo-price-inflator", "demo-recipient-switch", "demo-compute-failure"].includes(String(demoSellerId))) {
+    throw new Error("Choose one of Scout's built-in demo sellers.");
   }
   if (demoSellerId !== undefined && process.env.SELLER_PAYMENTS_ENABLED !== "true") {
     throw new Error("Live scam tests need paid mode so Scout can inspect a real x402 challenge. No test can run in free mode.");
   }
   const buyer = getBuyerIdentity();
-  const listings = await getListings(demoSellerId !== undefined);
+  if (demoSellerId === "demo-compute-failure" && !buyer.privateKey) {
+    throw new Error("The seller failure demo needs a configured Base Sepolia buyer wallet.");
+  }
+  const listings = await getListings(demoSellerId !== undefined, typeof demoSellerId === "string" ? demoSellerId : undefined);
   if (listings.length === 0) throw new Error("Marketplace has no ready sellers to handle this task.");
 
   let plan: PlannedStep[];
   if (typeof demoSellerId === "string") {
-    const demoSeller = listings.find((listing) => listing.id === demoSellerId && listing.demoScamType);
+    const demoSeller = listings.find((listing) => listing.id === demoSellerId &&
+      (listing.demoScamType || listing.demoFailureType === "compute_error"));
     if (!demoSeller) {
-      throw new Error("That scam demo is not ready or has already been quarantined. Check the Marketplace seller status and its payment setup.");
+      throw new Error("That demo seller is not ready in the Marketplace. Check its payment setup and availability.");
     }
     const input = { page: 1 };
     const inputError = validate(demoSeller.inputSchema, input);
@@ -778,7 +791,9 @@ export async function prepareTask(taskValue: unknown, budgetValue: unknown, conc
     plan = [{
       id: "step-1",
       sellerId: demoSeller.id,
-      task: `Scrape books page 1 using ${demoSeller.name} to test Scout's payment safety checks.`,
+      task: demoSeller.demoFailureType
+        ? `Scrape books page 1 using ${demoSeller.name} to test no-service/no-charge handling.`
+        : `Scrape books page 1 using ${demoSeller.name} to test Scout's payment safety checks.`,
       input,
       bindings: []
     }];
@@ -1092,9 +1107,12 @@ export async function runReceiptReplayDemo(): Promise<ExecutionReport> {
 async function executeBudgetChoice(proposalId: string, proposal: BudgetProposal, choice: "extend" | "continue"): Promise<ExecutionReport> {
   const includeDemoListings = proposal.prepared.plan.some((step) => {
     const listing = proposal.prepared.listings.find((candidate) => candidate.id === step.sellerId);
-    return Boolean(listing?.demoScamType || listing?.demoReplayRole);
+    return Boolean(listing?.demoScamType || listing?.demoReplayRole || listing?.demoFailureType);
   });
-  const liveListings = await getListings(includeDemoListings);
+  const selectedDemoSeller = proposal.prepared.plan
+    .map((step) => proposal.prepared.listings.find((listing) => listing.id === step.sellerId))
+    .find((listing) => listing?.demoScamType);
+  const liveListings = await getListings(includeDemoListings, selectedDemoSeller?.id);
   const liveById = new Map(liveListings.map((listing) => [listing.id, listing]));
   const changedListing = proposal.prepared.plan.some((step) => {
     const planned = proposal.prepared.listings.find((listing) => listing.id === step.sellerId);
@@ -1123,8 +1141,11 @@ async function runPreparedTask(prepared: PreparedExecution, budgetUnits: bigint)
   const sellers = new Map(listings.map((listing) => [listing.id, listing]));
   const includeDemoListings = plan.some((step) => {
     const listing = sellers.get(step.sellerId);
-    return Boolean(listing?.demoScamType || listing?.demoReplayRole);
+    return Boolean(listing?.demoScamType || listing?.demoReplayRole || listing?.demoFailureType);
   });
+  const selectedDemoSeller = plan
+    .map((step) => sellers.get(step.sellerId))
+    .find((listing) => listing?.demoScamType);
 
   const paymentClient = buyer.privateKey ? createPaymentClient(buyer.privateKey) : undefined;
   const priorOutputs = new Map<string, unknown>();
@@ -1150,7 +1171,7 @@ async function runPreparedTask(prepared: PreparedExecution, budgetUnits: bigint)
         lastReason = error instanceof Error ? error.message : "Could not refresh the Marketplace listings.";
         break;
       }
-      const candidate = liveListings.find((seller) => !seller.demoScamType && !seller.demoReplayRole && !triedSellerIds.has(seller.id));
+      const candidate = liveListings.find((seller) => !seller.demoScamType && !seller.demoReplayRole && !seller.demoFailureType && !triedSellerIds.has(seller.id));
       if (!candidate) break;
       triedSellerIds.add(candidate.id);
 
@@ -1254,7 +1275,7 @@ async function runPreparedTask(prepared: PreparedExecution, budgetUnits: bigint)
 
     let liveListings: SellerListing[];
     try {
-      liveListings = await getListings(includeDemoListings);
+      liveListings = await getListings(includeDemoListings, selectedDemoSeller?.id);
     } catch (error) {
       for (const id of pending) {
         reportsById.get(id)!.reason = `Not called because Scout could not refresh the Marketplace: ${error instanceof Error ? error.message : "connection failed"}`;
@@ -1354,7 +1375,8 @@ async function runPreparedTask(prepared: PreparedExecution, budgetUnits: bigint)
         stopped = true;
         if (reportsById.get(step.id)?.status === "settlement unknown") haltAfterBatch = true;
         const rejectedReport = reportsById.get(step.id)!;
-        if ((rejectedReport.scamMismatch || rejectedReport.status === "paid, output rejected") && !haltAfterBatch) {
+        const failedDemoWork = sellers.get(step.sellerId)?.demoFailureType === "compute_error" && rejectedReport.status === "failed and not charged";
+        if ((rejectedReport.scamMismatch || rejectedReport.status === "paid, output rejected" || failedDemoWork) && !haltAfterBatch) {
           await tryAlternativeSeller(step, rejectedReport);
         }
       }

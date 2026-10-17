@@ -22,6 +22,7 @@ listingProperties.selectionScore = { type: "number", minimum: 0 };
 listingProperties.trustStatus = { type: "string", enum: ["unproven", "active", "quarantined", "blacklisted"] };
 listingProperties.demoScamType = { type: "string", enum: ["price_mismatch", "recipient_mismatch"] };
 listingProperties.demoReplayRole = { type: "string", enum: ["first", "second"] };
+listingProperties.demoFailureType = { type: "string", enum: ["compute_error"] };
 const validateListing = ajv.compile(listingSchema);
 
 function withCurrentReputation(listing: SellerListing): SellerListing {
@@ -75,6 +76,7 @@ function rankSellers(listings: SellerListing[]): SellerListing[] {
 
 export function registerSeller(input: SellerRegistration, registrationSource: "website" | "built_in" = "website"): SellerListing {
   if (registrationSource === "website" && getSeller(input.id)) throw new Error("A seller with this ID is already registered. Choose a new ID.");
+  const { demoScamType, demoReplayRole, demoFailureType, ...sellerDetails } = input;
   let endpoint: URL;
   try {
     endpoint = new URL(input.endpointUrl);
@@ -101,14 +103,15 @@ export function registerSeller(input: SellerRegistration, registrationSource: "w
   const payTo = validPayTo ? suppliedPayTo : "0x0000000000000000000000000000000000000001";
 
   const listing = {
-    ...input,
+    ...sellerDetails,
     priceUnits,
     payTo,
     paymentRequired: paymentsEnabled,
     ready: registrationSource === "built_in" ? input.ready === true : true,
     ...(input.readinessReason ? { readinessReason: input.readinessReason } : {}),
-    ...(registrationSource === "built_in" && input.demoScamType ? { demoScamType: input.demoScamType } : {}),
-    ...(registrationSource === "built_in" && input.demoReplayRole ? { demoReplayRole: input.demoReplayRole } : {}),
+    ...(registrationSource === "built_in" && demoScamType ? { demoScamType } : {}),
+    ...(registrationSource === "built_in" && demoReplayRole ? { demoReplayRole } : {}),
+    ...(registrationSource === "built_in" && demoFailureType ? { demoFailureType } : {}),
     reputation: calculateReputation(input.id)
   } as SellerListing;
 

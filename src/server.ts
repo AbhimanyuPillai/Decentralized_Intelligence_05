@@ -19,6 +19,7 @@ import { mountJobSummary, jobSummaryDefinition } from "./sellers/job-summary/rou
 import { mountDemoPriceInflator, demoPriceInflatorDefinition } from "./sellers/demo-price-inflator/routes.js";
 import { mountDemoRecipientSwitch, demoRecipientSwitchDefinition } from "./sellers/demo-recipient-switch/routes.js";
 import { mountDemoReceiptReplay, demoReceiptFirstDefinition, demoReceiptSecondDefinition } from "./sellers/demo-receipt-replay/routes.js";
+import { mountDemoComputeFailure, demoComputeFailureDefinition } from "./sellers/demo-compute-failure/routes.js";
 import { createSellerManifest } from "./sellers/shared/paidJsonEndpoint.js";
 import { hideAutoSeededFreeListings, hideWebsiteListingsFromOtherPaymentMode } from "./marketplace/database.js";
 import {
@@ -96,6 +97,7 @@ mountJobSummary(app);
 mountDemoPriceInflator(app);
 mountDemoRecipientSwitch(app);
 mountDemoReceiptReplay(app);
+mountDemoComputeFailure(app);
 const hiddenAutoSeededListings = hideAutoSeededFreeListings();
 if (hiddenAutoSeededListings > 0) {
   console.info(`Unlisted ${hiddenAutoSeededListings} automatic free-test seller listing(s).`);
@@ -121,7 +123,8 @@ const builtInSellerDefinitions = [
   demoPriceInflatorDefinition,
   demoRecipientSwitchDefinition,
   demoReceiptFirstDefinition,
-  demoReceiptSecondDefinition
+  demoReceiptSecondDefinition,
+  demoComputeFailureDefinition
 ];
 if (process.env.NODE_ENV !== "production" || publicBaseUrl) {
   for (const definition of builtInSellerDefinitions) {
