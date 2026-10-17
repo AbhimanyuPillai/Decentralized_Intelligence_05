@@ -31,9 +31,13 @@ Send a JSON seller listing with `id`, `name`, `category`, `description`, `endpoi
 
 The website's **Register seller** form submits to this endpoint. Contract examples are not automatically published. The endpoint returns `201` and the saved listing, or `400` with an error description if the listing is invalid.
 
+The three built-in sellers publish a manifest at `/sellers/{sellerId}/manifest`. The Marketplace uses those same seller definitions to register the built-in listings at startup. Their endpoint URL, input schema, output schema, price, payment address, and readiness flag therefore stay connected to the implementation. Manually registered listings are preserved across restarts.
+
 In local free test mode (`NODE_ENV` is not `production` and `SELLER_PAYMENTS_ENABLED=false`), both apps use localhost HTTP to avoid browser warnings from self-signed development certificates. The server sets the listing price to zero, marks it `paymentRequired: false`, and does not need a seller wallet. In paid or production mode, both apps use HTTPS; seller endpoints must be public HTTPS endpoints with a real Base Sepolia receiving address and a positive price. The server sets payment fields from its mode rather than trusting values sent by the browser.
 
 `GET /api/config` returns the active registration mode so the website can show the correct form fields.
+
+Marketplace and seller SQLite files are stored in the project directory by default, even if Node is started from a different working directory. Set `MARKETPLACE_DATABASE_PATH` or `SELLER_DATABASE_PATH` to choose another location. Each separate project copy still has its own database unless both are configured to share a path.
 
 ## Health check
 

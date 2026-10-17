@@ -25,6 +25,33 @@ export interface SellerListingDefinition {
   handle: (input: unknown) => Promise<unknown>;
 }
 
+export function createSellerManifest(
+  definition: SellerListingDefinition,
+  endpointUrl: string
+) {
+  const payTo = process.env[definition.payToEnv];
+  const paymentsEnabled = process.env.SELLER_PAYMENTS_ENABLED === "true";
+  const serviceReady = definition.isReady?.() ?? true;
+  const ready = serviceReady && (!paymentsEnabled || isWalletAddress(payTo));
+
+  return {
+    id: definition.id,
+    name: definition.name,
+    category: definition.category,
+    description: definition.description,
+    endpointUrl,
+    priceUnits: paymentsEnabled ? definition.priceUnits : "0",
+    paymentRequired: paymentsEnabled,
+    ready,
+    network: BASE_SEPOLIA,
+    asset: BASE_SEPOLIA_USDC,
+    payTo: paymentsEnabled ? payTo ?? "" : "0x0000000000000000000000000000000000000001",
+    inputSchema: definition.inputSchema,
+    outputSchema: definition.outputSchema,
+    reputation: { totalCalls: 0, successfulCalls: 0, successRatePercent: null, medianLatencyMs: null }
+  };
+}
+
 interface SellerRequestState {
   fingerprint: string;
   serviceId: string;
@@ -85,22 +112,10 @@ export function mountPaidJsonEndpoint(app: Express, definition: SellerListingDef
   }
 
   app.get(manifestPath, (_request, response) => {
-    response.json({
-      id: definition.id,
-      name: definition.name,
-      category: definition.category,
-      description: definition.description,
-      endpointUrl: endpointBase ? `${endpointBase}${definition.route}` : definition.route,
-      priceUnits: paymentsEnabled ? definition.priceUnits : "0",
-      paymentRequired: paymentsEnabled,
-      ready,
-      network: BASE_SEPOLIA,
-      asset: BASE_SEPOLIA_USDC,
-      payTo: payTo ?? "",
-      inputSchema: definition.inputSchema,
-      outputSchema: definition.outputSchema,
-      reputation: { totalCalls: 0, successfulCalls: 0, successRatePercent: null, medianLatencyMs: null }
-    });
+    response.json(createSellerManifest(
+      definition,
+      endpointBase ? `${endpointBase}${definition.route}` : definition.route
+    ));
   });
 
   const validateRequest: RequestHandler = (request, response, next) => {
@@ -137,11 +152,13 @@ export function mountPaidJsonEndpoint(app: Express, definition: SellerListingDef
       try {
         const result = await definition.handle(request.body);
         if (!validateOutput(result)) {
+          console.error(`${definition.id} returned output that did not match its schema:`, ajv.errorsText(validateOutput.errors));
           response.status(500).json({ error: "Seller output did not match its registered schema." });
           return;
         }
         response.status(200).json(result);
-      } catch {
+      } catch (error) {
+        console.error(`${definition.id} could not complete this request:`, error instanceof Error ? error.message : "unknown error");
         response.status(500).json({ error: `${definition.name} could not complete this request.` });
       }
     };
@@ -241,12 +258,14 @@ export function mountPaidJsonEndpoint(app: Express, definition: SellerListingDef
       const result = await definition.handle(request.body);
       if (!validateOutput(result)) {
         response.locals.paidSeller!.workFailed = true;
+        console.error(`${definition.id} returned output that did not match its schema:`, ajv.errorsText(validateOutput.errors));
         response.status(500).json({ error: "Seller output did not match its registered schema." });
         return;
       }
       response.status(200).json(result);
-    } catch {
+    } catch (error) {
       response.locals.paidSeller!.workFailed = true;
+      console.error(`${definition.id} could not complete this request:`, error instanceof Error ? error.message : "unknown error");
       response.status(500).json({ error: `${definition.name} could not complete this request.` });
     }
   };

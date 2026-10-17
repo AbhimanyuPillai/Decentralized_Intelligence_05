@@ -1,10 +1,9 @@
 import type { Express } from "express";
-import { mountPaidJsonEndpoint } from "../shared/paidJsonEndpoint.js";
+import { mountPaidJsonEndpoint, type SellerListingDefinition } from "../shared/paidJsonEndpoint.js";
 import { summarizeMoviesInHindi, movieSummaryReady } from "./service.js";
 import { movieSummaryInputSchema, movieSummaryOutputSchema, type MovieSummaryInput } from "./schema.js";
 
-export function mountMovieSummary(app: Express): void {
-  mountPaidJsonEndpoint(app, {
+export const movieSummaryDefinition: SellerListingDefinition = {
     id: "movie-summary",
     name: "Hindi Movie Summary Agent",
     category: "inference",
@@ -16,5 +15,8 @@ export function mountMovieSummary(app: Express): void {
     inputSchema: movieSummaryInputSchema,
     outputSchema: movieSummaryOutputSchema,
     handle: (input) => summarizeMoviesInHindi(input as MovieSummaryInput)
-  });
+};
+
+export function mountMovieSummary(app: Express): void {
+  mountPaidJsonEndpoint(app, movieSummaryDefinition);
 }

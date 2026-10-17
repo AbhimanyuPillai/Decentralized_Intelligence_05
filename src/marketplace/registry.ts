@@ -29,7 +29,7 @@ function withCurrentReputation(listing: SellerListing): SellerListing {
   };
 }
 
-export function registerSeller(input: SellerRegistration): SellerListing {
+export function registerSeller(input: SellerRegistration, registrationSource: "website" | "built_in" = "website"): SellerListing {
   let endpoint: URL;
   try {
     endpoint = new URL(input.endpointUrl);
@@ -67,7 +67,7 @@ export function registerSeller(input: SellerRegistration): SellerListing {
     throw new Error(details);
   }
 
-  saveSeller(listing);
+  saveSeller(listing, registrationSource);
   return listing;
 }
 

@@ -1,7 +1,12 @@
 import Database from "better-sqlite3";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { LedgerRecord, Reputation, SellerListing } from "../types.js";
 
-const database = new Database("marketplace.sqlite");
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const configuredDatabasePath = process.env.MARKETPLACE_DATABASE_PATH?.trim();
+const databasePath = path.resolve(projectRoot, configuredDatabasePath || "marketplace.sqlite");
+const database = new Database(databasePath);
 
 database.pragma("journal_mode = WAL");
 database.pragma("foreign_keys = ON");
@@ -50,12 +55,12 @@ const findSeller = database.prepare(
 
 const insertSeller = database.prepare(`
   INSERT INTO sellers (id, listing_json, created_at, updated_at, is_listed, registration_source)
-  VALUES (@id, @listingJson, @now, @now, 1, 'website')
+  VALUES (@id, @listingJson, @now, @now, 1, @registrationSource)
   ON CONFLICT(id) DO UPDATE SET
     listing_json = excluded.listing_json,
     updated_at = excluded.updated_at,
     is_listed = 1,
-    registration_source = 'website'
+    registration_source = excluded.registration_source
 `);
 
 const insertLedger = database.prepare(`
@@ -70,12 +75,20 @@ const readLedger = database.prepare(`
   LIMIT ?
 `);
 
-export function saveSeller(listing: SellerListing): void {
+export function saveSeller(listing: SellerListing, registrationSource: "website" | "built_in" = "website"): void {
   insertSeller.run({
     id: listing.id,
     listingJson: JSON.stringify(listing),
+    registrationSource,
     now: new Date().toISOString()
   });
+}
+
+export function getSellerRegistrationSource(id: string): string | undefined {
+  const row = database.prepare("SELECT registration_source FROM sellers WHERE id = ?").get(id) as
+    | { registration_source: string }
+    | undefined;
+  return row?.registration_source;
 }
 
 export function getSeller(id: string): SellerListing | undefined {

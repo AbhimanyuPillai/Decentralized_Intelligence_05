@@ -1,10 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import type { PaymentPayload } from "@x402/core/types";
 
-const databasePath = path.resolve(process.env.SELLER_DATABASE_PATH ?? "seller.sqlite");
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+const configuredDatabasePath = process.env.SELLER_DATABASE_PATH?.trim();
+const databasePath = path.resolve(projectRoot, configuredDatabasePath ?? "seller.sqlite");
 fs.mkdirSync(path.dirname(databasePath), { recursive: true });
 
 const database = new Database(databasePath);

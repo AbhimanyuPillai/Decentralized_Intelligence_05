@@ -1,10 +1,9 @@
 import type { Express } from "express";
-import { mountPaidJsonEndpoint } from "../shared/paidJsonEndpoint.js";
+import { mountPaidJsonEndpoint, type SellerListingDefinition } from "../shared/paidJsonEndpoint.js";
 import { getMovieFacts } from "./service.js";
 import { movieFactsInputSchema, movieFactsOutputSchema, type MovieFactsInput } from "./schema.js";
 
-export function mountMovieFacts(app: Express): void {
-  mountPaidJsonEndpoint(app, {
+export const movieFactsDefinition: SellerListingDefinition = {
     id: "movie-facts",
     name: "Movie Facts Agent",
     category: "data",
@@ -15,5 +14,8 @@ export function mountMovieFacts(app: Express): void {
     inputSchema: movieFactsInputSchema,
     outputSchema: movieFactsOutputSchema,
     handle: (input) => getMovieFacts(input as MovieFactsInput)
-  });
+};
+
+export function mountMovieFacts(app: Express): void {
+  mountPaidJsonEndpoint(app, movieFactsDefinition);
 }

@@ -15,6 +15,10 @@ try {
 
 const useLocalHttp = process.env.NODE_ENV !== "production" && process.env.SELLER_PAYMENTS_ENABLED !== "true";
 const protocol = useLocalHttp ? "http" : "https";
+const buyerPort = process.env.BUYER_PORT ?? "3001";
+const expectedBuyerOrigin = useLocalHttp
+  ? `http://localhost:${buyerPort}`
+  : process.env.BUYER_ORIGIN ?? `${protocol}://localhost:${buyerPort}`;
 
 if (!useLocalHttp) {
   const tlsSetup = spawnSync(process.execPath, ["scripts/setup-local-tls.mjs"], { stdio: "inherit" });
@@ -48,8 +52,6 @@ const children = services.map((service) => {
 
 let stopping = false;
 const marketplacePort = process.env.MARKETPLACE_PORT ?? "3000";
-const buyerPort = process.env.BUYER_PORT ?? "3001";
-
 function requestUrl(url, headers = {}) {
   const transport = url.startsWith("https:") ? https : http;
   return new Promise((resolve, reject) => {
@@ -97,12 +99,12 @@ Promise.all([
 ]).then(() => {
   return Promise.all([
     requestUrl(`${protocol}://localhost:${marketplacePort}/api/registry`, {
-      Origin: process.env.BUYER_ORIGIN ?? `${protocol}://localhost:${buyerPort}`
+    Origin: expectedBuyerOrigin
     }),
     requestUrl(`${protocol}://localhost:${buyerPort}/buyer.html`)
   ]);
 }).then(([registryResponse, buyerPageResponse]) => {
-  const expectedOrigin = process.env.BUYER_ORIGIN ?? `${protocol}://localhost:${buyerPort}`;
+  const expectedOrigin = expectedBuyerOrigin;
   if (
     registryResponse.status !== 200 ||
     registryResponse.headers["access-control-allow-origin"] !== expectedOrigin ||

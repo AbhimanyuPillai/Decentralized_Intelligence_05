@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { mountPaidJsonEndpoint } from "../shared/paidJsonEndpoint.js";
+import { mountPaidJsonEndpoint, type SellerListingDefinition } from "../shared/paidJsonEndpoint.js";
 import { scrapeOscarMovies } from "./service.js";
 import {
   movieScraperInputSchema,
@@ -7,8 +7,7 @@ import {
   type MovieScraperInput
 } from "./schema.js";
 
-export function mountMovieScraper(app: Express): void {
-  mountPaidJsonEndpoint(app, {
+export const movieScraperDefinition: SellerListingDefinition = {
     id: "movie-scraper",
     name: "Oscar Film Scraper Agent",
     category: "scraping",
@@ -19,5 +18,8 @@ export function mountMovieScraper(app: Express): void {
     inputSchema: movieScraperInputSchema,
     outputSchema: movieScraperOutputSchema,
     handle: (input) => scrapeOscarMovies(input as MovieScraperInput)
-  });
+};
+
+export function mountMovieScraper(app: Express): void {
+  mountPaidJsonEndpoint(app, movieScraperDefinition);
 }

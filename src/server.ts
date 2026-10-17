@@ -6,7 +6,17 @@ import path from "node:path";
 import { mountMovieScraper } from "./sellers/movie-scraper/routes.js";
 import { mountMovieFacts } from "./sellers/movie-facts/routes.js";
 import { mountMovieSummary } from "./sellers/movie-summary/routes.js";
-import { hideAutoSeededFreeListings, listLedgerRecords, saveLedgerRecord } from "./marketplace/database.js";
+import { movieScraperDefinition } from "./sellers/movie-scraper/routes.js";
+import { movieFactsDefinition } from "./sellers/movie-facts/routes.js";
+import { movieSummaryDefinition } from "./sellers/movie-summary/routes.js";
+import { mountShelfScraper, shelfScraperDefinition } from "./sellers/shelf-scraper/routes.js";
+import { mountFxRates, fxRatesDefinition } from "./sellers/fx-rates/routes.js";
+import { mountHindiSummary, hindiSummaryDefinition } from "./sellers/hindi-summary/routes.js";
+import { mountFakeJobsScraper, fakeJobsScraperDefinition } from "./sellers/fakejobs-scraper/routes.js";
+import { mountJobFacts, jobFactsDefinition } from "./sellers/job-facts/routes.js";
+import { mountJobSummary, jobSummaryDefinition } from "./sellers/job-summary/routes.js";
+import { createSellerManifest } from "./sellers/shared/paidJsonEndpoint.js";
+import { getSellerRegistrationSource, hideAutoSeededFreeListings, listLedgerRecords, saveLedgerRecord } from "./marketplace/database.js";
 import { parseLedgerRecord } from "./marketplace/ledger.js";
 import {
   findSeller,
@@ -25,7 +35,9 @@ const buyerPort = process.env.BUYER_PORT ?? "3001";
 const useLocalHttp = process.env.NODE_ENV !== "production" && process.env.SELLER_PAYMENTS_ENABLED !== "true";
 const protocol = useLocalHttp ? "http" : "https";
 const host = process.env.HOST ?? (useLocalHttp ? "::1" : "0.0.0.0");
-const buyerOrigin = process.env.BUYER_ORIGIN ?? `${protocol}://localhost:${buyerPort}`;
+const buyerOrigin = useLocalHttp
+  ? `http://localhost:${buyerPort}`
+  : process.env.BUYER_ORIGIN ?? `${protocol}://localhost:${buyerPort}`;
 
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
   throw new Error("MARKETPLACE_PORT must be a whole number between 1 and 65535.");
@@ -36,18 +48,22 @@ function isRegistryApiPath(pathname: string): boolean {
 }
 
 app.use(express.json({ limit: "256kb" }));
-mountMovieScraper(app);
-mountMovieFacts(app);
-mountMovieSummary(app);
 app.use((request, response, next) => {
   const isRegistryRequest = isRegistryApiPath(request.path);
-  if (request.headers.origin === buyerOrigin && isRegistryRequest) {
+  const isSellerRequest = request.path === "/sellers" || request.path.startsWith("/sellers/");
+  const isMarketplaceRequest = isRegistryRequest || isSellerRequest;
+  if (request.headers.origin === buyerOrigin && isMarketplaceRequest) {
     response.setHeader("Access-Control-Allow-Origin", buyerOrigin);
     response.setHeader("Vary", "Origin");
-    response.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-    response.setHeader("Access-Control-Allow-Headers", "Accept");
+    response.setHeader("Access-Control-Allow-Methods", isSellerRequest ? "GET, POST, OPTIONS" : "GET, OPTIONS");
+    response.setHeader("Access-Control-Allow-Headers", isSellerRequest
+      ? "Accept, Content-Type, PAYMENT-SIGNATURE"
+      : "Accept");
+    if (isSellerRequest) {
+      response.setHeader("Access-Control-Expose-Headers", "PAYMENT-RESPONSE, PAYMENT-REQUIRED, RETRY-AFTER");
+    }
   }
-  if (request.method === "OPTIONS" && isRegistryRequest) {
+  if (request.method === "OPTIONS" && isMarketplaceRequest) {
     if (request.headers.origin !== buyerOrigin) {
       response.sendStatus(403);
       return;
@@ -57,9 +73,49 @@ app.use((request, response, next) => {
   }
   next();
 });
+mountMovieScraper(app);
+mountMovieFacts(app);
+mountMovieSummary(app);
+mountShelfScraper(app);
+mountFxRates(app);
+mountHindiSummary(app);
+mountFakeJobsScraper(app);
+mountJobFacts(app);
+mountJobSummary(app);
 const hiddenAutoSeededListings = hideAutoSeededFreeListings();
 if (hiddenAutoSeededListings > 0) {
   console.info(`Unlisted ${hiddenAutoSeededListings} automatic free-test seller listing(s).`);
+}
+
+// Publish the built-in sellers from the same definitions their endpoints use.
+const publicBaseUrl = process.env.PUBLIC_BASE_URL?.trim().replace(/\/+$/, "");
+const sellerBaseUrl = publicBaseUrl || `${protocol}://localhost:${port}`;
+const builtInSellerDefinitions = [
+  movieScraperDefinition,
+  movieFactsDefinition,
+  movieSummaryDefinition,
+  shelfScraperDefinition,
+  fxRatesDefinition,
+  hindiSummaryDefinition,
+  fakeJobsScraperDefinition,
+  jobFactsDefinition,
+  jobSummaryDefinition
+];
+if (process.env.NODE_ENV !== "production" || publicBaseUrl) {
+  for (const definition of builtInSellerDefinitions) {
+    if (getSellerRegistrationSource(definition.id) === "website") continue;
+    const manifest = createSellerManifest(definition, `${sellerBaseUrl}${definition.route}`);
+    if (process.env.SELLER_PAYMENTS_ENABLED === "true" && !manifest.ready) {
+      console.warn(`${definition.id} is not listed because its paid seller configuration is incomplete.`);
+      continue;
+    }
+    try {
+      registerSeller(manifest, "built_in");
+      console.info(`Registered built-in seller: ${definition.id}.`);
+    } catch (error) {
+      console.error(`Could not register built-in seller ${definition.id}.`, error instanceof Error ? error.message : "unknown error");
+    }
+  }
 }
 
 app.get("/api/config", (_request, response) => {
