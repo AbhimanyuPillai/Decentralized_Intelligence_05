@@ -34,7 +34,7 @@ app.get("/api/config", (_request, response) => {
     paidReady: /^(0x)?[a-fA-F0-9]{64}$/.test(
       process.env.BUYER_PRIVATE_KEY?.trim() || process.env.SCOUT_BUYER_PRIVATE_KEY?.trim() || ""
     ),
-    maxBudgetUnits: process.env.SCOUT_MAX_BUDGET_UNITS?.trim() || "50000"
+    maxBudgetUnits: process.env.SCOUT_MAX_BUDGET_UNITS?.trim() || "100000"
   });
 });
 

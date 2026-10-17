@@ -69,7 +69,7 @@ function parseBudget(value: unknown): bigint {
     throw new Error("budgetUnits must be a positive integer string in atomic USDC units.");
   }
   const budget = BigInt(value);
-  const configuredMaximum = process.env.SCOUT_MAX_BUDGET_UNITS?.trim() || "50000";
+  const configuredMaximum = process.env.SCOUT_MAX_BUDGET_UNITS?.trim() || "100000";
   if (!/^(0|[1-9][0-9]*)$/.test(configuredMaximum) || budget > BigInt(configuredMaximum)) {
     throw new Error(`The requested budget exceeds Scout's configured limit of ${configuredMaximum} atomic USDC units.`);
   }
