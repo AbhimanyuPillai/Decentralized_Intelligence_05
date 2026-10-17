@@ -2,7 +2,7 @@ import express from "express";
 import path from "node:path";
 import { createServer as createHttpServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
-import { confirmBudgetDecision, prepareTask } from "./buyer/execution.js";
+import { confirmBudgetDecision, prepareTask, runReceiptReplayDemo } from "./buyer/execution.js";
 import { loadLocalEnvironment, readLocalTlsFiles } from "./config.js";
 
 loadLocalEnvironment();
@@ -28,14 +28,22 @@ app.get("/", (_request, response) => {
 app.get("/api/config", (_request, response) => {
   const defaultProtocol = process.env.SELLER_PAYMENTS_ENABLED === "true" ? "https" : "http";
   const marketplaceBaseUrl = process.env.MARKETPLACE_BASE_URL?.trim() || `${defaultProtocol}://localhost:3000`;
+  const buyerKey = process.env.BUYER_PRIVATE_KEY?.trim() || process.env.SCOUT_BUYER_PRIVATE_KEY?.trim() || "";
   response.json({
     marketplaceBaseUrl,
     paidMode: process.env.SELLER_PAYMENTS_ENABLED === "true",
-    paidReady: /^(0x)?[a-fA-F0-9]{64}$/.test(
-      process.env.BUYER_PRIVATE_KEY?.trim() || process.env.SCOUT_BUYER_PRIVATE_KEY?.trim() || ""
-    ),
+    paidReady: /^(0x)?[a-fA-F0-9]{64}$/.test(buyerKey),
     maxBudgetUnits: process.env.SCOUT_MAX_BUDGET_UNITS?.trim() || "100000"
   });
+});
+
+app.post("/api/demo/receipt-replay", async (_request, response) => {
+  try {
+    response.json(await runReceiptReplayDemo());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Scout could not run the receipt replay demo.";
+    response.status(400).json({ error: message });
+  }
 });
 
 app.post("/api/execute", async (request, response) => {

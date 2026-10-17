@@ -1,5 +1,5 @@
 {
-  "contractVersion": "1.2.0",
+  "contractVersion": "1.3.0",
   "description": "Shared application contract for the agent marketplace. x402 wire payloads and signatures must be handled by the official x402 v2 SDK, not hand-authored here.",
   "conventions": {
     "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
@@ -64,6 +64,7 @@
       },
       "trustStatus": { "type": "string", "enum": ["unproven", "active", "quarantined", "blacklisted"] },
       "demoScamType": { "type": "string", "enum": ["price_mismatch", "recipient_mismatch"] },
+      "demoReplayRole": { "type": "string", "enum": ["first", "second"] },
       "rankingFactors": {
         "type": "object",
         "properties": {
@@ -622,8 +623,11 @@
     },
     "demoSellers": [
       { "id": "demo-price-inflator", "scamMismatch": "price_mismatch", "listedPriceUnits": "2000", "requestedPriceUnits": "20000" },
-      { "id": "demo-recipient-switch", "scamMismatch": "recipient_mismatch", "listedPriceUnits": "2000", "requestedPayTo": "A different address from the listing" }
+      { "id": "demo-recipient-switch", "scamMismatch": "recipient_mismatch", "listedPriceUnits": "2000", "requestedPayTo": "A different address from the listing" },
+      { "id": "demo-receipt-first", "demoReplayRole": "first", "priceUnits": "2000" },
+      { "id": "demo-receipt-second", "demoReplayRole": "second", "priceUnits": "2000" }
     ],
+    "receiptReplayRule": "Bind each signed authorization fingerprint to the first service that claims it. Reject reuse on every other service. Retry a confirmed uncharged failure only on the original service; never retry settled or uncertain authorizations.",
     "findingTrust": "A safety finding requires a private Scout-to-Marketplace report token and structured observed challenge values; caller-supplied reason text alone is not evidence."
   },
   "exampleTaskCostPlan": {

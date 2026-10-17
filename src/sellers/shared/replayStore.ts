@@ -16,6 +16,7 @@ database.pragma("busy_timeout = 5000");
 database.exec(`
   CREATE TABLE IF NOT EXISTS seller_payment_authorizations (
     fingerprint TEXT PRIMARY KEY,
+    service_id TEXT NOT NULL,
     state TEXT NOT NULL CHECK (state IN ('processing', 'settled', 'failed', 'unknown')),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
@@ -24,6 +25,12 @@ database.exec(`
   );
 
 `);
+
+const authorizationColumns = database.pragma("table_info(seller_payment_authorizations)") as Array<{ name: string }>;
+if (!authorizationColumns.some((column) => column.name === "service_id")) {
+  // Older receipts have no recorded service. Keep them blocked rather than risk reuse.
+  database.exec("ALTER TABLE seller_payment_authorizations ADD COLUMN service_id TEXT NOT NULL DEFAULT ''");
+}
 
 const oldCallColumns = database.pragma("table_info(seller_call_events)") as Array<{ name: string }>;
 if (oldCallColumns.some((column) => column.name === "requested_year")) {
@@ -82,26 +89,40 @@ export function fingerprintPayment(payment: PaymentPayload): string {
   return createHash("sha256").update(stableJson(replayIdentity)).digest("hex");
 }
 
-const claimTransaction = database.transaction((fingerprint: string): boolean => {
-  const now = new Date().toISOString();
-  const inserted = database.prepare(`
-    INSERT INTO seller_payment_authorizations (fingerprint, state, created_at, updated_at)
-    VALUES (?, 'processing', ?, ?)
-    ON CONFLICT(fingerprint) DO NOTHING
-  `).run(fingerprint, now, now);
-  if (inserted.changes === 1) return true;
+export type PaymentClaimResult =
+  | { claimed: true }
+  | { claimed: false; reason: "wrong_service" | "in_progress" | "already_used" | "settlement_unknown" };
 
-  // A confirmed pre-settlement service failure releases the authorization for retry.
-  const retry = database.prepare(`
+const claimTransaction = database.transaction((fingerprint: string, serviceId: string): PaymentClaimResult => {
+  const now = new Date().toISOString();
+  const previous = database.prepare(`
+    SELECT service_id, state FROM seller_payment_authorizations WHERE fingerprint = ?
+  `).get(fingerprint) as { service_id: string; state: "processing" | "settled" | "failed" | "unknown" } | undefined;
+  if (!previous) {
+    database.prepare(`
+      INSERT INTO seller_payment_authorizations (fingerprint, service_id, state, created_at, updated_at)
+      VALUES (?, ?, 'processing', ?, ?)
+    `).run(fingerprint, serviceId, now, now);
+    return { claimed: true };
+  }
+
+  if (previous.service_id !== serviceId) return { claimed: false, reason: "wrong_service" };
+  if (previous.state === "processing") return { claimed: false, reason: "in_progress" };
+  if (previous.state === "settled") return { claimed: false, reason: "already_used" };
+  if (previous.state === "unknown") return { claimed: false, reason: "settlement_unknown" };
+
+  const inserted = database.prepare(`
     UPDATE seller_payment_authorizations
     SET state = 'processing', updated_at = ?, response_status = NULL, tx_hash = NULL
-    WHERE fingerprint = ? AND state = 'failed'
-  `).run(now, fingerprint);
-  return retry.changes === 1;
+    WHERE fingerprint = ? AND service_id = ? AND state = 'failed'
+  `).run(now, fingerprint, serviceId);
+  return inserted.changes === 1
+    ? { claimed: true }
+    : { claimed: false, reason: "in_progress" };
 });
 
-export function claimPayment(fingerprint: string): boolean {
-  return claimTransaction(fingerprint);
+export function claimPayment(fingerprint: string, serviceId: string): PaymentClaimResult {
+  return claimTransaction(fingerprint, serviceId);
 }
 
 export function finishPayment(

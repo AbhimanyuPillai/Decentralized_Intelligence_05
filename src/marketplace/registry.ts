@@ -21,6 +21,7 @@ listingProperties.readinessReason = { type: "string" };
 listingProperties.selectionScore = { type: "number", minimum: 0 };
 listingProperties.trustStatus = { type: "string", enum: ["unproven", "active", "quarantined", "blacklisted"] };
 listingProperties.demoScamType = { type: "string", enum: ["price_mismatch", "recipient_mismatch"] };
+listingProperties.demoReplayRole = { type: "string", enum: ["first", "second"] };
 const validateListing = ajv.compile(listingSchema);
 
 function withCurrentReputation(listing: SellerListing): SellerListing {
@@ -107,6 +108,7 @@ export function registerSeller(input: SellerRegistration, registrationSource: "w
     ready: registrationSource === "built_in" ? input.ready === true : true,
     ...(input.readinessReason ? { readinessReason: input.readinessReason } : {}),
     ...(registrationSource === "built_in" && input.demoScamType ? { demoScamType: input.demoScamType } : {}),
+    ...(registrationSource === "built_in" && input.demoReplayRole ? { demoReplayRole: input.demoReplayRole } : {}),
     reputation: calculateReputation(input.id)
   } as SellerListing;
 

@@ -1,4 +1,4 @@
-import type { Express, RequestHandler } from "express";
+import type { Express, Request, RequestHandler } from "express";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import addFormatsModule from "ajv-formats";
 import { decodePaymentResponseHeader, decodePaymentSignatureHeader } from "@x402/core/http";
@@ -37,11 +37,14 @@ export interface SellerListingDefinition {
   challengePriceUnits?: string;
   challengePayTo?: (listedPayTo: string) => string;
   demoScamType?: "price_mismatch" | "recipient_mismatch";
+  demoReplayRole?: "first" | "second";
+  onAuthorizationClaimed?: (request: Request) => void;
+  onPaymentReplayRejected?: (request: Request, reason: string) => void;
   inputSchema: Record<string, unknown>;
   outputSchema: Record<string, unknown>;
   payToEnv: string;
   isReady?: () => boolean;
-  handle: (input: unknown) => Promise<unknown>;
+  handle: (input: unknown, request?: Request) => Promise<unknown>;
 }
 
 export function createSellerManifest(
@@ -74,6 +77,7 @@ export function createSellerManifest(
     asset: BASE_SEPOLIA_USDC,
     payTo: paymentsEnabled && payTo ? payTo : "0x0000000000000000000000000000000000000001",
     ...(definition.demoScamType ? { demoScamType: definition.demoScamType } : {}),
+    ...(definition.demoReplayRole ? { demoReplayRole: definition.demoReplayRole } : {}),
     inputSchema: definition.inputSchema,
     outputSchema: definition.outputSchema,
     reputation: { totalCalls: 0, successfulCalls: 0, successRatePercent: null, medianLatencyMs: null, availabilityPercent: null, mismatchCount: 0 }
@@ -245,10 +249,21 @@ export function mountPaidJsonEndpoint(app: Express, definition: SellerListingDef
     }
 
     const fingerprint = fingerprintPayment(decoded);
-    if (!claimPayment(fingerprint)) {
-      response.status(409).json({ error: "This payment authorization has already been used or is in progress." });
+    const claim = claimPayment(fingerprint, definition.id);
+    if (!claim.claimed) {
+      definition.onPaymentReplayRejected?.(request, claim.reason);
+      const error = claim.reason === "wrong_service"
+        ? "This payment receipt is bound to a different seller service and cannot be reused here."
+        : claim.reason === "in_progress"
+          ? "This payment receipt is already being processed."
+          : claim.reason === "settlement_unknown"
+            ? "This payment receipt has an uncertain settlement and cannot be reused."
+            : "This payment receipt has already been used and cannot be reused.";
+      response.status(409).json({ error, code: claim.reason });
       return;
     }
+
+    definition.onAuthorizationClaimed?.(request);
 
     response.locals.paidSeller = {
       fingerprint,
@@ -285,7 +300,7 @@ export function mountPaidJsonEndpoint(app: Express, definition: SellerListingDef
 
   const deliver: RequestHandler = async (request, response) => {
     try {
-      const result = await definition.handle(request.body);
+      const result = await definition.handle(request.body, request);
       if (!validateOutput(result)) {
         response.locals.paidSeller!.workFailed = true;
         console.error(`${definition.id} returned output that did not match its schema:`, ajv.errorsText(validateOutput.errors));

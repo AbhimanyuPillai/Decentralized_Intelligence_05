@@ -252,7 +252,7 @@ function getBuyerIdentity(): { address: string; privateKey?: `0x${string}` } {
   return { address: account.address, privateKey };
 }
 
-async function getListings(): Promise<SellerListing[]> {
+async function getListings(includeDemo = false): Promise<SellerListing[]> {
   const response = await request(marketplaceUrl("/api/registry"), {
     headers: { accept: "application/json" },
     signal: AbortSignal.timeout(15_000),
@@ -272,10 +272,11 @@ async function getListings(): Promise<SellerListing[]> {
     typeof item.priceUnits === "string" && /^(0|[1-9][0-9]*)$/.test(item.priceUnits) &&
     isObject(item.inputSchema) &&
     isObject(item.outputSchema) &&
+    (item.demoReplayRole === undefined || item.demoReplayRole === "first" || item.demoReplayRole === "second") &&
     item.ready !== false &&
     item.trustStatus !== "quarantined" &&
     item.trustStatus !== "blacklisted"
-  );
+  ).filter((item) => includeDemo || (!item.demoScamType && !item.demoReplayRole));
 }
 
 async function askModel(system: string, user: unknown, timeoutMs = 60_000): Promise<unknown> {
@@ -762,7 +763,7 @@ export async function prepareTask(taskValue: unknown, budgetValue: unknown, conc
     throw new Error("Live scam tests need paid mode so Scout can inspect a real x402 challenge. No test can run in free mode.");
   }
   const buyer = getBuyerIdentity();
-  const listings = await getListings();
+  const listings = await getListings(demoSellerId !== undefined);
   if (listings.length === 0) throw new Error("Marketplace has no ready sellers to handle this task.");
 
   let plan: PlannedStep[];
@@ -845,8 +846,255 @@ export async function confirmBudgetDecision(proposalIdValue: unknown, choiceValu
   return proposal.confirmation;
 }
 
+export async function runReceiptReplayDemo(): Promise<ExecutionReport> {
+  if (process.env.SELLER_PAYMENTS_ENABLED !== "true") {
+    throw new Error("The receipt replay demo needs paid mode on Base Sepolia.");
+  }
+  const buyer = getBuyerIdentity();
+  if (!buyer.privateKey) throw new Error("Set BUYER_PRIVATE_KEY to run the paid receipt replay demo.");
+
+  const listings = await getListings(true);
+  const first = listings.find((listing) => listing.demoReplayRole === "first");
+  const second = listings.find((listing) => listing.demoReplayRole === "second");
+  if (!first || !second) throw new Error("Both receipt replay demo services must be ready in the Marketplace.");
+  const demoPriceUnits = "2000";
+  if (
+    first.priceUnits !== demoPriceUnits || second.priceUnits !== demoPriceUnits ||
+    first.paymentRequired !== true || second.paymentRequired !== true ||
+    first.network !== second.network || first.asset.toLowerCase() !== second.asset.toLowerCase() ||
+    first.payTo.toLowerCase() !== second.payTo.toLowerCase()
+  ) {
+    throw new Error("The receipt demo services do not have matching 0.002 USDC payment terms. No call was made.");
+  }
+  if (BigInt(demoPriceUnits) > getConfiguredMaximum()) {
+    throw new Error("The receipt demo price is above Scout's configured task maximum.");
+  }
+
+  const taskId = crypto.randomUUID();
+  const task = "Demonstrate that one signed receipt can be used by only one seller service.";
+  const input = { page: 1 };
+  for (const listing of [first, second]) {
+    const inputError = validate(listing.inputSchema, input);
+    if (inputError) throw new Error(`${listing.name} does not accept the replay demo input: ${inputError}`);
+  }
+
+  const paymentClient = createPaymentClient(buyer.privateKey);
+  const firstUrl = assertSellerUrl(first);
+  const secondUrl = assertSellerUrl(second);
+  const firstStartedAt = performance.now();
+  let challengeResponse = await request(firstUrl, {
+    method: "POST",
+    headers: { accept: "application/json", "content-type": "application/json" },
+    body: JSON.stringify(input),
+    signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
+    redirect: "error"
+  });
+  if (challengeResponse.status !== 402) {
+    throw new Error(`Service A did not return an x402 payment challenge (HTTP ${challengeResponse.status}). No receipt was sent.`);
+  }
+  const challengeBody: unknown = await challengeResponse.json();
+  const paymentRequired = paymentClient.getPaymentRequiredResponse(
+    (name) => challengeResponse.headers.get(name),
+    challengeBody
+  );
+  const acceptedList = (paymentRequired as unknown as { accepts?: unknown }).accepts;
+  const accepted = Array.isArray(acceptedList)
+    ? acceptedList.find((item) => isObject(item) && item.scheme === "exact" && item.network === first.network)
+    : undefined;
+  if (
+    !isObject(accepted) || accepted.amount !== demoPriceUnits ||
+    typeof accepted.payTo !== "string" || accepted.payTo.toLowerCase() !== first.payTo.toLowerCase() ||
+    typeof accepted.asset !== "string" || accepted.asset.toLowerCase() !== first.asset.toLowerCase()
+  ) {
+    throw new Error("Service A's payment challenge differs from its Marketplace listing. No payment was signed.");
+  }
+
+  const verifiedChallenge = { ...paymentRequired, accepts: [accepted] } as typeof paymentRequired;
+  const paymentPayload = await paymentClient.createPaymentPayload(verifiedChallenge);
+  const signatureHeaders = paymentClient.encodePaymentSignatureHeader(paymentPayload);
+  const firstResponsePromise = request(firstUrl, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      "x-scout-replay-demo-id": taskId,
+      ...signatureHeaders
+    },
+    body: JSON.stringify(input),
+    signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
+    redirect: "error"
+  }).catch(() => null);
+
+  let firstResponse: Response | null;
+  let replayResponse: Response;
+  const replayStartedAt = performance.now();
+  try {
+    // Wait until Service A has claimed the receipt before sending it to Service B.
+    const statusUrl = new URL(`/api/demo/receipt-replay/status/${taskId}`, new URL(firstUrl).origin).toString();
+    let firstClaimed = false;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const statusResponse = await request(statusUrl, {
+        headers: { accept: "application/json" },
+        signal: AbortSignal.timeout(3_000),
+        redirect: "error"
+      });
+      const statusBody: unknown = await statusResponse.json().catch(() => null);
+      if (statusResponse.ok && isObject(statusBody) && statusBody.firstClaimed === true) {
+        firstClaimed = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (!firstClaimed) {
+      firstResponse = await firstResponsePromise;
+      throw new Error("Service A did not claim the receipt in time. No replay was sent to Service B.");
+    }
+    try {
+      replayResponse = await request(secondUrl, {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+          "x-scout-replay-demo-id": taskId,
+          ...signatureHeaders
+        },
+        body: JSON.stringify(input),
+        signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
+        redirect: "error"
+      });
+    } finally {
+      const finishUrl = new URL(`/api/demo/receipt-replay/finish/${taskId}`, new URL(firstUrl).origin).toString();
+      await request(finishUrl, { method: "POST", signal: AbortSignal.timeout(3_000), redirect: "error" }).catch(() => undefined);
+    }
+    firstResponse = await firstResponsePromise;
+    if (!firstResponse) throw new Error("Service A closed the connection after the payment was signed; check Base Sepolia before retrying.");
+  } catch (error) {
+    throw new Error(`The replay demo stopped while sending the same receipt twice: ${error instanceof Error ? error.message : "network error"}`);
+  }
+
+  const firstBody: unknown = await firstResponse.json().catch(() => null);
+  const firstSettlementHeader = firstResponse.headers.get("PAYMENT-RESPONSE");
+  let txHash: string | null = null;
+  if (firstSettlementHeader) {
+    try {
+      const settlement = decodePaymentResponseHeader(firstSettlementHeader);
+      if (settlement.success && typeof settlement.transaction === "string" && /^0x[a-fA-F0-9]{64}$/.test(settlement.transaction)) {
+        txHash = settlement.transaction;
+      }
+    } catch {
+      // Keep the call unverified if the settlement header is malformed.
+    }
+  }
+
+  let firstOutput: unknown = null;
+  let firstOutputError: string | undefined;
+  if (firstResponse.ok) {
+    firstOutput = firstBody;
+    firstOutputError = validate(first.outputSchema, firstOutput);
+  }
+  const firstStatus: LedgerRecord["status"] = txHash
+    ? firstOutputError ? "paid, output rejected" : "paid"
+    : firstResponse.ok ? "settlement unknown" : "failed and not charged";
+  const firstReason = !firstResponse.ok
+    ? (isObject(firstBody) && typeof firstBody.error === "string" ? firstBody.error : `Service A returned HTTP ${firstResponse.status}.`)
+    : !txHash
+      ? "Service A returned no verifiable settlement receipt. Do not retry this payment."
+      : firstOutputError
+        ? `Payment settled, but Service A output failed schema validation: ${firstOutputError}`
+        : undefined;
+  const firstStep: StepReport = {
+    taskId,
+    stepId: "step-1",
+    sellerId: first.id,
+    serviceName: first.name,
+    task: "Use the signed receipt once at Service A.",
+    input,
+    output: firstOutput,
+    status: firstStatus,
+    latencyMs: Math.max(0, Math.round(performance.now() - firstStartedAt)),
+    listedPriceUnits: first.priceUnits,
+    askedPriceUnits: demoPriceUnits,
+    amountPaidUnits: txHash ? demoPriceUnits : "0",
+    txHash,
+    explorerUrl: txHash ? `https://sepolia.basescan.org/tx/${txHash}` : null,
+    schemaValid: firstResponse.ok ? !firstOutputError : null,
+    ledgerSaved: false,
+    sellerResponded: true,
+    ...(firstReason ? { reason: firstReason } : {})
+  };
+  firstStep.ledgerSaved = await saveLedger(makeLedgerRecord(first, buyer.address, firstStep, firstStatus, firstReason));
+
+  const replayBody: unknown = await replayResponse.json().catch(() => null);
+  const replaySettlementHeader = replayResponse.headers.get("PAYMENT-RESPONSE");
+  let replayTxHash: string | null = null;
+  if (replaySettlementHeader) {
+    try {
+      const settlement = decodePaymentResponseHeader(replaySettlementHeader);
+      if (settlement.success && typeof settlement.transaction === "string" && /^0x[a-fA-F0-9]{64}$/.test(settlement.transaction)) {
+        replayTxHash = settlement.transaction;
+      }
+    } catch {
+      // A malformed settlement receipt is not counted as paid.
+    }
+  }
+  const replayStatus: LedgerRecord["status"] = replayTxHash
+    ? "paid"
+    : replayResponse.ok ? "settlement unknown" : "refused";
+  const replayReason = replayTxHash
+    ? "Safety check failed: Service B returned a second successful settlement for the reused receipt."
+    : isObject(replayBody) && typeof replayBody.error === "string"
+      ? `Service B rejected the reused receipt (HTTP ${replayResponse.status}): ${replayBody.error}`
+      : `Service B rejected the reused receipt (HTTP ${replayResponse.status}).`;
+  const replayStep: StepReport = {
+    taskId,
+    stepId: "step-2",
+    sellerId: second.id,
+    serviceName: second.name,
+    task: "Try the exact same signed receipt at Service B.",
+    input,
+    output: replayBody,
+    status: replayStatus,
+    latencyMs: Math.max(0, Math.round(performance.now() - replayStartedAt)),
+    listedPriceUnits: second.priceUnits,
+    askedPriceUnits: demoPriceUnits,
+    amountPaidUnits: replayTxHash ? demoPriceUnits : "0",
+    txHash: replayTxHash,
+    explorerUrl: replayTxHash ? `https://sepolia.basescan.org/tx/${replayTxHash}` : null,
+    schemaValid: null,
+    ledgerSaved: false,
+    sellerResponded: true,
+    reason: replayReason
+  };
+  replayStep.ledgerSaved = await saveLedger(makeLedgerRecord(second, buyer.address, replayStep, replayStatus, replayReason));
+
+  const replayBlocked = replayResponse.status === 409 && !replayTxHash;
+  const success = Boolean(txHash && firstResponse.ok && !firstOutputError && replayBlocked);
+  return {
+    taskId,
+    success,
+    task,
+    budgetUnits: demoPriceUnits,
+    maxConcurrency: 1,
+    estimatedUnits: demoPriceUnits,
+    spentUnits: (BigInt(firstStep.amountPaidUnits) + BigInt(replayStep.amountPaidUnits)).toString(),
+    finalAnswer: success
+      ? "Service A completed the paid request. Scout sent the identical signed receipt to Service B, which returned HTTP 409 before work or settlement. Only one payment was made."
+      : `Receipt replay demo completed with a safety warning. Service A returned HTTP ${firstResponse.status}; Service B returned HTTP ${replayResponse.status}. Check both call records and the transaction receipt.`,
+    plan: [
+      { id: firstStep.stepId, sellerId: first.id, task: firstStep.task, input, bindings: [] },
+      { id: replayStep.stepId, sellerId: second.id, task: replayStep.task, input, bindings: [] }
+    ],
+    steps: [firstStep, replayStep],
+    ...(!success ? { reason: "The demo did not confirm the expected one-paid, one-409 replay result." } : {})
+  };
+}
+
 async function executeBudgetChoice(proposalId: string, proposal: BudgetProposal, choice: "extend" | "continue"): Promise<ExecutionReport> {
-  const liveListings = await getListings();
+  const includeDemoListings = proposal.prepared.plan.some((step) => {
+    const listing = proposal.prepared.listings.find((candidate) => candidate.id === step.sellerId);
+    return Boolean(listing?.demoScamType || listing?.demoReplayRole);
+  });
+  const liveListings = await getListings(includeDemoListings);
   const liveById = new Map(liveListings.map((listing) => [listing.id, listing]));
   const changedListing = proposal.prepared.plan.some((step) => {
     const planned = proposal.prepared.listings.find((listing) => listing.id === step.sellerId);
@@ -873,6 +1121,10 @@ async function runPreparedTask(prepared: PreparedExecution, budgetUnits: bigint)
   let estimatedUnits = prepared.estimatedUnits;
   const buyer = getBuyerIdentity();
   const sellers = new Map(listings.map((listing) => [listing.id, listing]));
+  const includeDemoListings = plan.some((step) => {
+    const listing = sellers.get(step.sellerId);
+    return Boolean(listing?.demoScamType || listing?.demoReplayRole);
+  });
 
   const paymentClient = buyer.privateKey ? createPaymentClient(buyer.privateKey) : undefined;
   const priorOutputs = new Map<string, unknown>();
@@ -898,7 +1150,7 @@ async function runPreparedTask(prepared: PreparedExecution, budgetUnits: bigint)
         lastReason = error instanceof Error ? error.message : "Could not refresh the Marketplace listings.";
         break;
       }
-      const candidate = liveListings.find((seller) => !seller.demoScamType && !triedSellerIds.has(seller.id));
+      const candidate = liveListings.find((seller) => !seller.demoScamType && !seller.demoReplayRole && !triedSellerIds.has(seller.id));
       if (!candidate) break;
       triedSellerIds.add(candidate.id);
 
@@ -1002,7 +1254,7 @@ async function runPreparedTask(prepared: PreparedExecution, budgetUnits: bigint)
 
     let liveListings: SellerListing[];
     try {
-      liveListings = await getListings();
+      liveListings = await getListings(includeDemoListings);
     } catch (error) {
       for (const id of pending) {
         reportsById.get(id)!.reason = `Not called because Scout could not refresh the Marketplace: ${error instanceof Error ? error.message : "connection failed"}`;

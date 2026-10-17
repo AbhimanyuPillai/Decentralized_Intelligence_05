@@ -94,6 +94,7 @@ function makeServiceCard(seller) {
 
   addText(card, "p", "service-description", seller.description);
   if (seller.demoScamType) addText(card, "p", "demo-warning", "Unsafe test seller. Use Scout's scam test buttons to see how it handles this seller.");
+  if (seller.demoReplayRole) addText(card, "p", "demo-warning", "Demo only. Used by Scout's receipt replay test; do not select for normal work.");
   if (seller.trustStatus === "quarantined" || seller.trustStatus === "blacklisted") {
     addText(card, "p", "message error", seller.trustStatus === "blacklisted"
       ? "Blocked from Scout: this seller repeated a verified payment mismatch."

@@ -238,3 +238,12 @@ test("demo sellers publish a lower listed price and independently controlled cha
   assert.notEqual(demoRecipientSwitchDefinition.challengePayTo?.(listedAddress), listedAddress);
   assert.equal(demoRecipientSwitchDefinition.demoScamType, "recipient_mismatch");
 });
+
+test("receipt replay demo services share the same listed price and payment recipient setting", async () => {
+  const { demoReceiptFirstDefinition, demoReceiptSecondDefinition } = await import("../src/sellers/demo-receipt-replay/routes.js");
+  assert.equal(demoReceiptFirstDefinition.demoReplayRole, "first");
+  assert.equal(demoReceiptSecondDefinition.demoReplayRole, "second");
+  assert.equal(demoReceiptFirstDefinition.priceUnits, "2000");
+  assert.equal(demoReceiptSecondDefinition.priceUnits, "2000");
+  assert.equal(demoReceiptFirstDefinition.payToEnv, demoReceiptSecondDefinition.payToEnv);
+});

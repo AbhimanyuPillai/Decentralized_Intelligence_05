@@ -14,8 +14,10 @@ let confirmationChoice = null;
 let confirmationInFlight = false;
 let budgetExtensionAllowed = false;
 let paidModeEnabled = false;
+let paidWalletReady = false;
 let selectedDemoSellerId = null;
 const scamDemoButtons = document.querySelectorAll("[data-scam-test]");
+const replayDemoButton = document.querySelector("[data-replay-test]");
 
 function showStatus(message, kind = "") {
   runStatus.textContent = message;
@@ -125,6 +127,7 @@ function setTaskFormDisabled(disabled) {
 
 function setScamDemoButtonsDisabled(disabled) {
   for (const button of scamDemoButtons) button.disabled = disabled;
+  replayDemoButton.disabled = disabled || !paidWalletReady;
 }
 
 function showBudgetDecision(decision) {
@@ -207,11 +210,13 @@ async function loadConfig() {
     document.querySelector("#marketplace-status").textContent = `Scout will use ${config.marketplaceBaseUrl}. Task limit: ${unitsToUsdc(config.maxBudgetUnits)} USDC.`;
     document.querySelector("#mode-pill").textContent = config.paidMode ? "Base Sepolia paid mode" : "Local free test mode";
     paidModeEnabled = config.paidMode === true;
+    paidWalletReady = config.paidReady === true;
     setScamDemoButtonsDisabled(!paidModeEnabled);
+    replayDemoButton.disabled = !paidModeEnabled || !paidWalletReady;
     if (!paidModeEnabled) {
       document.querySelector("#scam-demo-help").textContent = "Turn on paid mode to run these live tests. Scout needs to receive the demo seller's x402 payment request before it can detect the mismatch.";
     } else if (!config.paidReady) {
-      document.querySelector("#scam-demo-help").textContent = "Scout can catch the mismatch without a buyer wallet. To let it also pay a safe fallback, configure the Base Sepolia test wallet first.";
+      document.querySelector("#scam-demo-help").textContent = "The receipt replay test requires a configured Base Sepolia buyer wallet. The scam checks need paid mode; fallback calls may also use test USDC.";
     }
   } catch (error) {
     document.querySelector("#marketplace-status").textContent = error.message;
@@ -278,5 +283,29 @@ for (const button of scamDemoButtons) {
     taskForm.requestSubmit();
   });
 }
+
+replayDemoButton.addEventListener("click", async () => {
+  setScamDemoButtonsDisabled(true);
+  replayDemoButton.disabled = true;
+  budgetDecision.hidden = true;
+  runReport.hidden = true;
+  showStatus("Scout is paying Service A once, then testing whether Service B rejects the same receipt…");
+  try {
+    const response = await fetch("/api/demo/receipt-replay", {
+      method: "POST",
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(600_000)
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error ?? `Receipt replay demo failed (${response.status}).`);
+    showReport(result);
+    showStatus(result.success ? "Receipt replay blocked. Only Service A was paid." : "Receipt replay demo needs review. See the call report.", result.success ? "success" : "error");
+  } catch (error) {
+    showStatus(error.message, "error");
+  } finally {
+    setScamDemoButtonsDisabled(!paidModeEnabled);
+    replayDemoButton.disabled = !paidModeEnabled || !paidWalletReady;
+  }
+});
 
 loadConfig();

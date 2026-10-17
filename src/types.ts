@@ -2,6 +2,7 @@ export type ServiceCategory = "scraping" | "data" | "inference";
 
 export type SellerTrustStatus = "unproven" | "active" | "quarantined" | "blacklisted";
 export type ScamMismatch = "price_mismatch" | "recipient_mismatch";
+export type DemoReplayRole = "first" | "second";
 
 export interface RankingFactors {
   legitimacy: number;
@@ -34,6 +35,7 @@ export interface SellerListing {
   trustStatus: SellerTrustStatus;
   rankingFactors: RankingFactors;
   demoScamType?: ScamMismatch;
+  demoReplayRole?: DemoReplayRole;
   network: string;
   asset: string;
   payTo: string;
