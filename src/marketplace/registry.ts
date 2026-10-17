@@ -38,7 +38,7 @@ export function registerSeller(input: SellerRegistration, registrationSource: "w
   }
   const paymentsEnabled = process.env.SELLER_PAYMENTS_ENABLED === "true";
   const localHttp = endpoint.protocol === "http:" && ["localhost", "127.0.0.1", "::1", "[::1]"].includes(endpoint.hostname);
-  if (endpoint.protocol !== "https:" && !( !paymentsEnabled && localHttp)) {
+  if (endpoint.protocol !== "https:" && !(!paymentsEnabled && localHttp)) {
     throw new Error(paymentsEnabled
       ? "Paid seller endpoints must use HTTPS."
       : "Free test endpoints must use HTTPS or localhost HTTP.");
@@ -79,6 +79,8 @@ export function findSeller(id: string): SellerListing | undefined {
 export function searchSellers(filters: {
   category?: string;
   maxPriceUnits?: string;
+  query?: string;
+  ready?: boolean;
 }): SellerListing[] {
   const maxPrice = filters.maxPriceUnits
     ? BigInt(filters.maxPriceUnits)
@@ -86,6 +88,11 @@ export function searchSellers(filters: {
 
   return listSellers()
     .filter((seller) => !filters.category || seller.category === filters.category)
+    .filter((seller) => filters.ready === undefined || seller.ready === filters.ready)
+    .filter((seller) => {
+      const query = filters.query?.trim().toLocaleLowerCase();
+      return !query || `${seller.name} ${seller.description} ${seller.id}`.toLocaleLowerCase().includes(query);
+    })
     .filter(
       (seller) =>
         maxPrice === undefined || BigInt(seller.priceUnits) <= maxPrice

@@ -9,7 +9,7 @@ export const shelfScraperDefinition: SellerListingDefinition = {
   category: "scraping",
   description: "Scrapes one Books to Scrape catalogue page and returns book titles, GBP prices, star ratings, and descriptions.",
   route: "/sellers/shelf-scraper/scrape",
-  priceUnits: "5000",
+  priceUnits: "2000",
   payToEnv: "SHELF_SCRAPER_PAY_TO",
   inputSchema: shelfScraperInputSchema,
   outputSchema: shelfScraperOutputSchema,

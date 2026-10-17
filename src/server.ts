@@ -16,7 +16,7 @@ import { mountFakeJobsScraper, fakeJobsScraperDefinition } from "./sellers/fakej
 import { mountJobFacts, jobFactsDefinition } from "./sellers/job-facts/routes.js";
 import { mountJobSummary, jobSummaryDefinition } from "./sellers/job-summary/routes.js";
 import { createSellerManifest } from "./sellers/shared/paidJsonEndpoint.js";
-import { getSellerRegistrationSource, hideAutoSeededFreeListings, listLedgerRecords, saveLedgerRecord } from "./marketplace/database.js";
+import { hideAutoSeededFreeListings, listLedgerRecords, saveLedgerRecord } from "./marketplace/database.js";
 import { parseLedgerRecord } from "./marketplace/ledger.js";
 import {
   findSeller,
@@ -103,7 +103,6 @@ const builtInSellerDefinitions = [
 ];
 if (process.env.NODE_ENV !== "production" || publicBaseUrl) {
   for (const definition of builtInSellerDefinitions) {
-    if (getSellerRegistrationSource(definition.id) === "website") continue;
     const manifest = createSellerManifest(definition, `${sellerBaseUrl}${definition.route}`);
     if (process.env.SELLER_PAYMENTS_ENABLED === "true" && !manifest.ready) {
       console.warn(`${definition.id} is not listed because its paid seller configuration is incomplete.`);
@@ -131,6 +130,8 @@ app.get("/health", (_request, response) => {
 app.get("/api/registry", (request, response) => {
   const category = request.query.category;
   const maxPriceUnits = request.query.maxPriceUnits;
+  const query = request.query.q;
+  const ready = request.query.ready;
 
   if (category && !["scraping", "data", "inference"].includes(String(category))) {
     response.status(400).json({ error: "Unsupported category." });
@@ -145,10 +146,22 @@ app.get("/api/registry", (request, response) => {
     return;
   }
 
+  if (query !== undefined && (typeof query !== "string" || query.length > 100)) {
+    response.status(400).json({ error: "q must be a search string of at most 100 characters." });
+    return;
+  }
+
+  if (ready !== undefined && ready !== "true" && ready !== "false") {
+    response.status(400).json({ error: "ready must be true or false." });
+    return;
+  }
+
   response.json(
     searchSellers({
       category: category ? String(category) : undefined,
-      maxPriceUnits: maxPriceUnits ? String(maxPriceUnits) : undefined
+      maxPriceUnits: maxPriceUnits ? String(maxPriceUnits) : undefined,
+      query: query ? String(query) : undefined,
+      ready: ready === undefined ? undefined : ready === "true"
     })
   );
 });

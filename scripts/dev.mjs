@@ -33,7 +33,7 @@ const services = [
 ];
 const children = services.map((service) => {
   const port = process.env[service.portName] ?? service.fallbackPort;
-  const child = spawn(process.execPath, ["--watch", "--import", "tsx", service.entry], {
+  const child = spawn(process.execPath, ["--watch", "--watch-path=src", "--import", "tsx", service.entry], {
     env: { ...process.env, PORT: port },
     stdio: "inherit"
   });

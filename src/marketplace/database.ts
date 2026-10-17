@@ -139,7 +139,7 @@ export function calculateReputation(sellerId: string): Reputation {
     .prepare("SELECT status, latency_ms FROM ledger WHERE seller_id = ?")
     .all(sellerId) as Array<{ status: string; latency_ms: number }>;
 
-  const successfulCalls = calls.filter((call) => call.status === "paid").length;
+  const successfulCalls = calls.filter((call) => call.status === "paid" || call.status === "completed free").length;
   const latencies = calls
     .map((call) => call.latency_ms)
     .sort((left, right) => left - right);

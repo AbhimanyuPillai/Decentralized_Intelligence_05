@@ -9,7 +9,7 @@ export const fakeJobsScraperDefinition: SellerListingDefinition = {
   category: "scraping",
   description: "Searches the Real Python Fake Jobs training site by title, company, and location.",
   route: "/sellers/fakejobs-scraper/search",
-  priceUnits: "5000",
+  priceUnits: "2000",
   payToEnv: "FAKEJOBS_SCRAPER_PAY_TO",
   inputSchema: fakeJobsScraperInputSchema,
   outputSchema: fakeJobsScraperOutputSchema,

@@ -13,7 +13,7 @@ export const movieScraperDefinition: SellerListingDefinition = {
     category: "scraping",
     description: "Returns Oscar-winning films for one year (2010–2015) from Scrap This Site, including title, nominations, awards, and best-picture status.",
     route: "/sellers/movie-scraper/scrape",
-    priceUnits: "5000",
+    priceUnits: "2000",
     payToEnv: "MOVIE_SCRAPER_PAY_TO",
     inputSchema: movieScraperInputSchema,
     outputSchema: movieScraperOutputSchema,

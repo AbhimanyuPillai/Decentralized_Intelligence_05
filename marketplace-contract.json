@@ -126,7 +126,7 @@
       "category": "scraping",
       "description": "Scrapes one Books to Scrape catalogue page, follows book detail links, and returns title, GBP price, star rating, and description text.",
       "endpointUrl": "https://REPLACE_ME/sellers/shelf-scraper/scrape",
-      "priceUnits": "5000",
+      "priceUnits": "2000",
       "network": "eip155:84532",
       "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
       "payTo": "0xD0a2c0d5886B5B49CA39116816613a007C246F8b",
@@ -464,6 +464,8 @@
         "enum": [
           "paid",
           "paid, output rejected",
+          "completed free",
+          "settlement unknown",
           "refused",
           "failed and not charged"
         ]
@@ -495,6 +497,8 @@
     "statusInvariants": {
       "paid": "amountPaidUnits > 0 and txHash/explorerUrl identify the real settlement.",
       "paid, output rejected": "amountPaidUnits > 0 and txHash/explorerUrl identify the real settlement.",
+      "completed free": "amountPaidUnits is 0 and txHash/explorerUrl are null; only valid for a free test-mode listing.",
+      "settlement unknown": "amountPaidUnits is 0 and txHash/explorerUrl are null; a payment was signed but settlement could not be verified, so the call must not be retried automatically.",
       "refused": "amountPaidUnits is 0 and txHash/explorerUrl are null.",
       "failed and not charged": "amountPaidUnits is 0 and txHash/explorerUrl are null."
     }
@@ -503,7 +507,7 @@
     "protocol": "Use the official x402 v2 SDK for payment headers, payloads, signing, verification, and settlement. Do not hand-build or modify signed payloads.",
     "beforeSigning": [
       "The selected scheme is exact.",
-      "The asked amount is a non-negative integer string and does not exceed the registry priceUnits.",
+      "The asked amount is a non-negative integer string and exactly equals the registry priceUnits.",
       "The asked network matches the seller listing and configured network.",
       "The asked asset matches the seller listing and configured asset.",
       "The asked payTo address matches the seller listing payTo address, case-insensitively."
@@ -513,14 +517,14 @@
   },
   "exampleTaskCostPlan": {
     "scrapingCalls": 4,
-    "scrapingPriceUnitsEach": "5000",
+    "scrapingPriceUnitsEach": "2000",
     "dataCalls": 1,
     "dataPriceUnitsEach": "1000",
     "inferenceCalls": 2,
     "inferencePriceUnitsEach": "10000",
-    "estimatedTotalUnits": "41000",
+    "estimatedTotalUnits": "29000",
     "budgetUnits": "50000",
-    "remainingUnits": "9000",
+    "remainingUnits": "21000",
     "note": "Estimate only; calculate actual spend using live listings and accepted quotes."
   }
 }

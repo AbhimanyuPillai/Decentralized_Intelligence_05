@@ -3,6 +3,9 @@ node_modules/
 certs/*.pem
 dist/
 .env
+*.env
+*.env.*
+!.env.example
 marketplace.sqlite
 marketplace.sqlite-shm
 marketplace.sqlite-wal

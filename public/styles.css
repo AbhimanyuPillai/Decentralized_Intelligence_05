@@ -75,8 +75,8 @@ th, td { padding: 11px 12px; border-bottom: 1px solid var(--line); text-align: l
 th { background: var(--soft); color: #475467; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
 tbody tr:last-child td { border-bottom: 0; }
 .status-tag { display: inline-block; border-radius: 999px; padding: 3px 8px; background: #f2f4f7; font-size: 11px; }
-.status-paid { background: #e4f7ec; color: #17663a; }
-.status-refused, .status-failed-and-not-charged, .status-paid-output-rejected { background: #fff1f0; color: #a32b22; }
+.status-paid, .status-completed-free { background: #e4f7ec; color: #17663a; }
+.status-refused, .status-failed-and-not-charged, .status-paid-output-rejected, .status-settlement-unknown { background: #fff1f0; color: #a32b22; }
 td a { color: var(--accent); }
 footer { padding: 24px; border-top: 1px solid var(--line); color: var(--muted); text-align: center; font-size: 12px; }
 @media (max-width: 700px) {

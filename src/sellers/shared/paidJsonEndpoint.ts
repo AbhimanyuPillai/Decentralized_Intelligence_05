@@ -6,10 +6,26 @@ import type { PaymentPayload } from "@x402/core/types";
 import { HTTPFacilitatorClient, x402ResourceServer } from "@x402/core/server";
 import { paymentMiddleware } from "@x402/express";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
+import { privateKeyToAccount } from "viem/accounts";
 import { claimPayment, fingerprintPayment, finishPayment } from "./replayStore.js";
 
 export const BASE_SEPOLIA = "eip155:84532" as const;
 export const BASE_SEPOLIA_USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
+
+function getSellerPayTo(environmentName: string): string | undefined {
+  const configuredAddress = process.env[environmentName]?.trim();
+  if (configuredAddress) return configuredAddress;
+
+  // Existing projects can share one seller wallet until per-agent recipients are configured.
+  const configuredKey = process.env.SELLER_PRIVATE_KEY?.trim();
+  if (!configuredKey || !/^(0x)?[a-fA-F0-9]{64}$/.test(configuredKey)) return undefined;
+  const privateKey = (configuredKey.startsWith("0x") ? configuredKey : `0x${configuredKey}`) as `0x${string}`;
+  try {
+    return privateKeyToAccount(privateKey).address;
+  } catch {
+    return undefined;
+  }
+}
 
 export interface SellerListingDefinition {
   id: string;
@@ -29,7 +45,7 @@ export function createSellerManifest(
   definition: SellerListingDefinition,
   endpointUrl: string
 ) {
-  const payTo = process.env[definition.payToEnv];
+  const payTo = getSellerPayTo(definition.payToEnv);
   const paymentsEnabled = process.env.SELLER_PAYMENTS_ENABLED === "true";
   const serviceReady = definition.isReady?.() ?? true;
   const ready = serviceReady && (!paymentsEnabled || isWalletAddress(payTo));
@@ -70,7 +86,7 @@ const ajv = new Ajv2020({ allErrors: true, strict: false });
 const freeRequestWindows = new Map<string, { startedAt: number; count: number }>();
 const FREE_REQUESTS_PER_MINUTE = 30;
 const facilitatorClient = new HTTPFacilitatorClient({
-  url: process.env.X402_FACILITATOR_URL ?? "https://x402.org/facilitator"
+  url: process.env.X402_FACILITATOR_URL?.trim() || process.env.FACILITATOR_URL?.trim() || "https://x402.org/facilitator"
 });
 const resourceServer = new x402ResourceServer(facilitatorClient)
   .register(BASE_SEPOLIA, new ExactEvmScheme());
@@ -96,7 +112,7 @@ export function mountPaidJsonEndpoint(app: Express, definition: SellerListingDef
   const validateInput = ajv.compile(definition.inputSchema);
   const validateOutput = ajv.compile(definition.outputSchema);
   const manifestPath = `/sellers/${definition.id}/manifest`;
-  const payTo = process.env[definition.payToEnv];
+  const payTo = getSellerPayTo(definition.payToEnv);
   const paymentsEnabled = process.env.SELLER_PAYMENTS_ENABLED === "true";
   const serviceReady = definition.isReady?.() ?? true;
   const ready = serviceReady && (!paymentsEnabled || isWalletAddress(payTo));

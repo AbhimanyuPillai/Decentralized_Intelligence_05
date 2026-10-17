@@ -2,6 +2,7 @@ import express from "express";
 import path from "node:path";
 import { createServer as createHttpServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
+import { executeTask } from "./buyer/execution.js";
 import { loadLocalEnvironment, readLocalTlsFiles } from "./config.js";
 
 loadLocalEnvironment();
@@ -13,7 +14,7 @@ const protocol = useLocalHttp ? "http" : "https";
 const host = process.env.HOST ?? (useLocalHttp ? "::1" : "0.0.0.0");
 const publicDirectory = path.join(process.cwd(), "public");
 
-app.use(express.json({ limit: "256kb" }));
+app.use(express.json({ limit: "16kb" }));
 app.use(express.static(publicDirectory, { index: false }));
 
 app.get("/health", (_request, response) => {
@@ -24,84 +25,26 @@ app.get("/", (_request, response) => {
   response.sendFile(path.join(publicDirectory, "buyer.html"));
 });
 
-app.post("/api/chat", async (request, response) => {
-  const apiKey = process.env.LLM_API_KEY;
-  if (!apiKey) {
-    response.status(503).json({ error: "LLM_API_KEY is missing from the server environment." });
-    return;
-  }
+app.get("/api/config", (_request, response) => {
+  const defaultProtocol = process.env.SELLER_PAYMENTS_ENABLED === "true" ? "https" : "http";
+  const marketplaceBaseUrl = process.env.MARKETPLACE_BASE_URL?.trim() || `${defaultProtocol}://localhost:3000`;
+  response.json({
+    marketplaceBaseUrl,
+    paidMode: process.env.SELLER_PAYMENTS_ENABLED === "true",
+    paidReady: /^(0x)?[a-fA-F0-9]{64}$/.test(
+      process.env.BUYER_PRIVATE_KEY?.trim() || process.env.SCOUT_BUYER_PRIVATE_KEY?.trim() || ""
+    ),
+    maxBudgetUnits: process.env.SCOUT_MAX_BUDGET_UNITS?.trim() || "50000"
+  });
+});
 
-  const messages = request.body?.messages;
-  if (
-    !Array.isArray(messages) ||
-    messages.length === 0 ||
-    messages.length > 20 ||
-    messages.some((message) =>
-      !message ||
-      !["user", "assistant"].includes(message.role) ||
-      typeof message.content !== "string" ||
-      message.content.length > 5000
-    )
-  ) {
-    response.status(400).json({ error: "Provide 1–20 user/assistant messages of up to 5000 characters each." });
-    return;
-  }
-
+app.post("/api/execute", async (request, response) => {
   try {
-    const upstream = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "openai/gpt-oss-120b",
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "system",
-            content: "You are Scout, a friendly research buyer assistant. Have a natural conversation and ask short clarifying questions about the user's goal, scope, location, time range, and desired output when needed. Do not contact the Marketplace, select a seller, or start work. Return only a JSON object with keys: reply (string), readyToConfirm (boolean), proposedTask (string or null). Set readyToConfirm true only when you can summarize a concrete task and the user has supplied a positive maximum budget in their messages. When ready, summarize the proposed task and tell the user they must review and confirm it before Scout contacts the Marketplace. Do not claim that any task is confirmed, seller hired, call made, schema validated, payment sent, or result produced."
-          },
-          ...messages
-        ],
-        temperature: 0.6,
-        max_tokens: 1024
-      }),
-      signal: AbortSignal.timeout(60000)
-    });
-    const payload = await upstream.json() as {
-      choices?: Array<{ message?: { content?: string } }>;
-      error?: { message?: string };
-    };
-    if (!upstream.ok) {
-      response.status(502).json({ error: payload.error?.message ?? `Model API request failed (${upstream.status}).` });
-      return;
-    }
-
-    const content = payload.choices?.[0]?.message?.content;
-    if (!content) {
-      response.status(502).json({ error: "Model API returned an empty response." });
-      return;
-    }
-    const result = JSON.parse(content) as {
-      reply?: unknown;
-      readyToConfirm?: unknown;
-      proposedTask?: unknown;
-    };
-    if (
-      typeof result.reply !== "string" ||
-      typeof result.readyToConfirm !== "boolean" ||
-      !(typeof result.proposedTask === "string" || result.proposedTask === null)
-    ) {
-      response.status(502).json({ error: "Scout returned an invalid conversation response." });
-      return;
-    }
-    response.json({ ...result, model: "openai/gpt-oss-120b" });
+    const report = await executeTask(request.body?.task, request.body?.budgetUnits, request.body?.maxConcurrency);
+    response.json(report);
   } catch (error) {
-    const message = error instanceof Error && error.name === "TimeoutError"
-      ? "Model API request timed out."
-      : "Could not reach the model API or parse Scout's response.";
-    response.status(502).json({ error: message });
+    const message = error instanceof Error ? error.message : "Scout could not start this task.";
+    response.status(400).json({ error: message });
   }
 });
 

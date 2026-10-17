@@ -12,52 +12,61 @@
     <header class="topbar buyer-topbar">
       <a class="brand" href="/buyer.html">Scout</a>
       <span class="buyer-subtitle">Buyer dashboard</span>
-      <span class="network-pill">Local test mode</span>
+      <span id="mode-pill" class="network-pill">Local free test mode</span>
     </header>
 
     <main class="buyer-main">
       <section class="buyer-intro">
         <p class="eyebrow">Scout control panel</p>
         <h1>What should Scout work on?</h1>
-        <p>Describe a task and set a spending limit. Scout checks the Marketplace registry after you confirm.</p>
+        <p>Describe the task and set a maximum budget. Scout will find suitable sellers, run the work, and report every call.</p>
       </section>
 
       <section class="connection-card" aria-labelledby="connection-title">
-        <div>
-          <p class="eyebrow">Marketplace connection</p>
-          <h2 id="connection-title">Marketplace address</h2>
-        </div>
-        <label class="sr-only" for="marketplace-url">Marketplace URL</label>
-        <input id="marketplace-url" type="url" value="http://localhost:3000" placeholder="http://localhost:3000" autocomplete="url" required />
-        <p class="connection-help">Scout contacts <code>/api/registry</code> only after you confirm the task. Local free test mode uses localhost HTTP; paid or production mode uses HTTPS.</p>
+        <p class="eyebrow">Connected marketplace</p>
+        <h2 id="connection-title">Seller directory</h2>
+        <p id="marketplace-status" class="connection-help">Loading Marketplace connection…</p>
       </section>
 
-      <section class="conversation" aria-label="Scout conversation">
-        <div id="conversation-log" class="conversation-log" aria-live="polite" aria-relevant="additions">
-          <article class="chat-bubble assistant">Hi, I’m Scout. Tell me what you’re researching and I’ll ask a few questions to clarify the scope and the result you need. I won’t contact the Marketplace until you review and confirm a task.</article>
-        </div>
-
-        <div class="conversation-controls">
-          <label class="budget-field" for="budget-input">
-            Maximum budget
-            <span class="budget-input-wrap"><input id="budget-input" inputmode="decimal" value="0.050" /><span>USDC</span></span>
-          </label>
-        </div>
-
-        <section id="confirmation-card" class="confirmation-card" hidden aria-labelledby="confirmation-title">
-          <p class="eyebrow">Review before Marketplace lookup</p>
-          <h2 id="confirmation-title">Proposed research task</h2>
-          <label for="proposed-task">Task summary</label>
-          <textarea id="proposed-task" rows="3" maxlength="3500"></textarea>
-          <p id="budget-summary" class="connection-help"></p>
-          <button id="confirm-task" class="button" type="button">Confirm task and check Marketplace</button>
-        </section>
-        <form id="chat-form" class="chat-form">
-          <label class="sr-only" for="chat-input">Message Scout</label>
-          <textarea id="chat-input" rows="2" maxlength="3500" placeholder="Tell Scout more or answer a question…" required></textarea>
-          <button id="send-button" class="button" type="submit">Send</button>
+      <section class="conversation" aria-label="Scout task runner">
+        <form id="task-form" class="task-form">
+          <label for="task-input">Your task</label>
+          <textarea id="task-input" rows="5" maxlength="3500" placeholder="For example: Find Python developer jobs and summarize the main skills employers ask for." required></textarea>
+          <div class="task-controls">
+            <label class="budget-field" for="budget-input">
+              Maximum budget
+              <span class="budget-input-wrap"><input id="budget-input" inputmode="decimal" value="0.050" /><span>USDC</span></span>
+            </label>
+            <label for="concurrency-input">
+              Max simultaneous calls
+              <select id="concurrency-input">
+                <option value="1">1 call</option>
+                <option value="2">2 calls</option>
+                <option value="3">3 calls</option>
+                <option value="4">4 calls</option>
+                <option value="5">5 calls</option>
+              </select>
+            </label>
+            <button id="run-button" class="button" type="submit">Run task</button>
+          </div>
         </form>
-        <p id="chat-status" class="message" role="status"></p>
+        <p id="run-status" class="message" role="status"></p>
+
+        <section id="run-report" class="run-report" hidden aria-live="polite" aria-labelledby="report-title">
+          <div class="report-heading">
+            <div>
+              <p class="eyebrow">Execution report</p>
+              <h2 id="report-title">Scout's results</h2>
+            </div>
+            <span id="run-result-tag" class="status-tag"></span>
+          </div>
+          <p id="task-report" class="connection-help"></p>
+          <div class="budget-report"></div>
+          <h3>Answer</h3>
+          <div id="final-answer" class="final-answer"></div>
+          <h3>Seller calls</h3>
+          <div id="call-reports" class="call-reports"></div>
+        </section>
       </section>
     </main>
   </body>

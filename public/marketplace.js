@@ -112,12 +112,16 @@ async function loadServices() {
   try {
     const category = document.querySelector("#category-filter").value;
     const maxPrice = document.querySelector("#max-price-filter").value.trim();
+    const queryText = document.querySelector("#service-query-filter").value.trim();
+    const ready = document.querySelector("#ready-filter").value;
     if (category) query.set("category", category);
     if (maxPrice) query.set("maxPriceUnits", usdcToUnits(maxPrice));
+    if (queryText) query.set("q", queryText);
+    if (ready) query.set("ready", ready);
 
     const sellers = await requestJson(`/api/registry?${query.toString()}`);
     if (sellers.length === 0) {
-      showMessage(servicesMessage, "No services are registered yet.");
+      showMessage(servicesMessage, "No services match these filters. Try a higher price limit or a different category.");
       return;
     }
     for (const seller of sellers) serviceList.append(makeServiceCard(seller));
@@ -153,6 +157,7 @@ function makeLedgerRow(record) {
   tag.className = `status-tag ${statusClass(record.status)}`;
   tag.textContent = record.status;
   status.append(tag);
+  makeLedgerCell(row, record.reason || "—");
   makeLedgerCell(row, `${record.latencyMs} ms`);
   const receipt = document.createElement("td");
   if (record.explorerUrl) {
@@ -188,6 +193,13 @@ async function loadLedger() {
 document.querySelector("#search-form").addEventListener("submit", (event) => {
   event.preventDefault();
   loadServices();
+});
+for (const filter of document.querySelectorAll("#category-filter, #ready-filter, #max-price-filter")) {
+  filter.addEventListener("change", loadServices);
+}
+document.querySelector("#service-query-filter").addEventListener("input", () => {
+  clearTimeout(window.serviceSearchTimer);
+  window.serviceSearchTimer = setTimeout(loadServices, 250);
 });
 document.querySelector("#refresh-services").addEventListener("click", loadServices);
 document.querySelector("#refresh-ledger").addEventListener("click", loadLedger);

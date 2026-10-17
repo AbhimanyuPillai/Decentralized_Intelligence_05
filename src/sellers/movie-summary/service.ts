@@ -1,4 +1,5 @@
 import type { MovieSummaryInput, MovieSummaryOutput } from "./schema.js";
+import { getSellerLlmConfig } from "../shared/llmConfig.js";
 
 const TIMEOUT_MS = 35_000;
 
@@ -12,36 +13,23 @@ function parseModelJson(content: string): unknown {
 }
 
 export function movieSummaryReady(): boolean {
-  const endpoint = process.env.MOVIE_SUMMARY_API_URL?.trim();
-  const key = process.env.MOVIE_SUMMARY_API_KEY?.trim();
-  const model = process.env.MOVIE_SUMMARY_MODEL?.trim();
-  if (!endpoint || !key || !model) return false;
-  try {
-    const url = new URL(endpoint);
-    return url.protocol === "https:" || (url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname));
-  } catch {
-    return false;
-  }
+  return getSellerLlmConfig("MOVIE_SUMMARY") !== undefined;
 }
 
 export async function summarizeMoviesInHindi(input: MovieSummaryInput): Promise<MovieSummaryOutput> {
-  const apiUrl = process.env.MOVIE_SUMMARY_API_URL;
-  const apiKey = process.env.MOVIE_SUMMARY_API_KEY;
-  const model = process.env.MOVIE_SUMMARY_MODEL;
-  if (!apiUrl || !apiKey || !model) {
-    throw new Error("Movie summary inference provider is not configured.");
-  }
+  const config = getSellerLlmConfig("MOVIE_SUMMARY");
+  if (!config) throw new Error("Movie summary inference provider is not configured.");
 
   const source = input.items.map(({ id, title, awards, text }) => ({ id, title, awards, text }));
-  const response = await fetch(apiUrl, {
+  const response = await fetch(config.endpoint, {
     method: "POST",
     headers: {
       accept: "application/json",
       "content-type": "application/json",
-      authorization: `Bearer ${apiKey}`
+      authorization: `Bearer ${config.apiKey}`
     },
     body: JSON.stringify({
-      model,
+      model: config.model,
       temperature: 0.2,
       response_format: { type: "json_object" },
       messages: [

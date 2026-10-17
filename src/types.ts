@@ -31,6 +31,8 @@ export interface SellerRegistration extends Omit<SellerListing, "reputation"> {
 export type CallStatus =
   | "paid"
   | "paid, output rejected"
+  | "completed free"
+  | "settlement unknown"
   | "refused"
   | "failed and not charged";
 

@@ -36,6 +36,10 @@
 
         <form id="search-form" class="filter-row">
           <label>
+            Search services
+            <input id="service-query-filter" type="search" placeholder="Name or description" />
+          </label>
+          <label>
             Category
             <select id="category-filter">
               <option value="">All categories</option>
@@ -46,7 +50,15 @@
           </label>
           <label>
             Max price (USDC)
-            <input id="max-price-filter" inputmode="decimal" placeholder="e.g. 0.01" />
+            <input id="max-price-filter" type="number" min="0" step="0.000001" inputmode="decimal" placeholder="e.g. 0.01" />
+          </label>
+          <label>
+            Seller status
+            <select id="ready-filter">
+              <option value="">All sellers</option>
+              <option value="true">Ready</option>
+              <option value="false">Needs setup</option>
+            </select>
           </label>
           <button class="button" type="submit">Search services</button>
         </form>
@@ -109,7 +121,7 @@
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>Time</th><th>Buyer</th><th>Seller</th><th>Listed</th><th>Asked</th><th>Paid</th><th>Status</th><th>Latency</th><th>Receipt</th></tr>
+              <tr><th>Time</th><th>Buyer</th><th>Seller</th><th>Listed</th><th>Asked</th><th>Paid</th><th>Status</th><th>Details</th><th>Latency</th><th>Receipt</th></tr>
             </thead>
             <tbody id="ledger-rows"></tbody>
           </table>

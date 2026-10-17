@@ -1,41 +1,48 @@
 .buyer-page { min-height: 100vh; background: #fbfcfe; }
 .buyer-topbar { justify-content: flex-start; }
 .buyer-subtitle { flex: 1; color: var(--muted); font-size: 14px; }
-.buyer-main { max-width: 860px; padding-bottom: 56px; }
+.buyer-main { max-width: 900px; padding-bottom: 56px; }
 .buyer-intro { padding: 56px 0 28px; }
 .buyer-intro h1 { font-size: clamp(32px, 5vw, 46px); }
-.buyer-intro > p:last-child { max-width: 620px; color: var(--muted); }
-.connection-card { padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
-.connection-card h2 { font-size: 19px; }
-.connection-card input { margin-top: 12px; }
-.connection-help { margin: 10px 0 0; color: var(--muted); font-size: 12px; }
-.connection-help code { color: var(--ink); }
+.buyer-intro > p:last-child { max-width: 680px; color: var(--muted); }
+.connection-card, .task-form, .run-report { padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.connection-card h2 { margin: 0; font-size: 19px; }
+.connection-card .eyebrow, .run-report .eyebrow { margin: 0 0 6px; }
+.connection-help { margin: 10px 0 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .conversation { margin-top: 22px; }
-.conversation-log { display: flex; flex-direction: column; gap: 12px; min-height: 290px; max-height: 48vh; overflow-y: auto; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: #f6f8fb; }
-.chat-bubble { max-width: min(90%, 720px); padding: 12px 15px; border-radius: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.chat-bubble.assistant { align-self: flex-start; border: 1px solid var(--line); background: #fff; }
-.chat-bubble.user { align-self: flex-end; background: var(--accent); color: #fff; }
-.listing-summary { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
-.conversation-controls { display: flex; justify-content: flex-end; padding: 12px 2px; }
+.task-form { display: grid; gap: 10px; }
+.task-form > label { font-weight: 650; }
+.task-form textarea { width: 100%; min-height: 110px; padding: 12px; font: inherit; font-size: 14px; resize: vertical; }
+.task-controls { display: flex; align-items: end; justify-content: space-between; gap: 18px; }
 .budget-field { min-width: 180px; }
 .budget-input-wrap { display: flex; align-items: center; gap: 8px; }
 .budget-input-wrap input { width: 150px; }
 .budget-input-wrap span { color: var(--muted); font-size: 13px; }
-.confirmation-card { display: grid; gap: 8px; margin: 10px 0 12px; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
-.confirmation-card[hidden] { display: none; }
-.confirmation-card h2 { margin-bottom: 4px; font-size: 20px; }
-.confirmation-card textarea { min-height: 78px; font: inherit; font-size: 14px; }
-.confirmation-card .eyebrow, .confirmation-card .connection-help { margin: 0; }
-.chat-form { display: flex; align-items: flex-end; gap: 10px; margin-top: 4px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
-.chat-form textarea { flex: 1; min-height: 50px; font: inherit; font-size: 14px; }
-.chat-form button:disabled, .confirmation-card button:disabled { cursor: wait; opacity: .65; }
+.task-form button:disabled { cursor: wait; opacity: .65; }
+.run-report { display: grid; gap: 12px; margin-top: 18px; }
+.run-report[hidden] { display: none; }
+.report-heading, .call-report-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.report-heading h2 { margin: 0; font-size: 22px; }
+.run-report h3 { margin: 10px 0 0; font-size: 16px; }
+.final-answer { padding: 14px; border-radius: 9px; background: #f6f8fb; white-space: pre-wrap; overflow-wrap: anywhere; }
+.call-reports { display: grid; gap: 12px; }
+.call-report { display: grid; gap: 8px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; }
+.call-report h4 { margin: 0; font-size: 15px; }
+.call-report .connection-help { margin-top: 3px; }
+.call-report .message { margin: 0; }
+.call-json { max-height: 320px; overflow: auto; padding: 12px; border-radius: 8px; background: #f6f8fb; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.call-report summary { cursor: pointer; font-size: 13px; }
+.call-report h5 { margin: 10px 0 4px; }
+.status-tag { display: inline-block; border-radius: 999px; padding: 3px 8px; background: #f2f4f7; font-size: 11px; white-space: nowrap; }
+.status-paid, .status-completed-free { background: #e4f7ec; color: #17663a; }
+.status-refused, .status-failed-and-not-charged, .status-paid-output-rejected, .status-settlement-unknown { background: #fff1f0; color: #a32b22; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 @media (max-width: 640px) {
   .buyer-topbar { flex-wrap: wrap; gap: 12px; padding: 14px 18px; }
   .buyer-subtitle { flex: 1 1 auto; }
   .buyer-main { padding-right: 18px; padding-left: 18px; }
   .buyer-intro { padding-top: 40px; }
-  .chat-form { align-items: stretch; flex-direction: column; }
+  .task-controls { align-items: stretch; flex-direction: column; }
   .budget-field, .budget-input-wrap input { width: 100%; }
-  .chat-bubble { max-width: 96%; }
+  .report-heading, .call-report-heading { align-items: flex-start; }
 }

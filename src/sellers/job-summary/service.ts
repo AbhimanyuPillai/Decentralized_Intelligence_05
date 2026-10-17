@@ -1,4 +1,5 @@
 import type { JobSummaryInput, JobSummaryOutput } from "./schema.js";
+import { getSellerLlmConfig } from "../shared/llmConfig.js";
 
 const TIMEOUT_MS = 35_000;
 
@@ -7,29 +8,18 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 export function jobSummaryReady(): boolean {
-  const endpoint = process.env.JOB_SUMMARY_API_URL?.trim();
-  const key = process.env.JOB_SUMMARY_API_KEY?.trim();
-  const model = process.env.JOB_SUMMARY_MODEL?.trim();
-  if (!endpoint || !key || !model) return false;
-  try {
-    const url = new URL(endpoint);
-    return url.protocol === "https:" || (url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname));
-  } catch {
-    return false;
-  }
+  return getSellerLlmConfig("JOB_SUMMARY") !== undefined;
 }
 
 export async function summarizeJobs(input: JobSummaryInput): Promise<JobSummaryOutput> {
-  const apiUrl = process.env.JOB_SUMMARY_API_URL;
-  const apiKey = process.env.JOB_SUMMARY_API_KEY;
-  const model = process.env.JOB_SUMMARY_MODEL;
-  if (!apiUrl || !apiKey || !model) throw new Error("Job summary inference provider is not configured.");
+  const config = getSellerLlmConfig("JOB_SUMMARY");
+  if (!config) throw new Error("Job summary inference provider is not configured.");
 
-  const response = await fetch(apiUrl, {
+  const response = await fetch(config.endpoint, {
     method: "POST",
-    headers: { accept: "application/json", "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+    headers: { accept: "application/json", "content-type": "application/json", authorization: `Bearer ${config.apiKey}` },
     body: JSON.stringify({
-      model,
+      model: config.model,
       temperature: 0.2,
       response_format: { type: "json_object" },
       messages: [

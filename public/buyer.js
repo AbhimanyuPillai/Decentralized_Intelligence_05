@@ -1,49 +1,15 @@
-const conversationLog = document.querySelector("#conversation-log");
-const chatStatus = document.querySelector("#chat-status");
-const chatInput = document.querySelector("#chat-input");
+const taskForm = document.querySelector("#task-form");
+const taskInput = document.querySelector("#task-input");
 const budgetInput = document.querySelector("#budget-input");
-const confirmationCard = document.querySelector("#confirmation-card");
-const proposedTaskInput = document.querySelector("#proposed-task");
-const marketplaceInput = document.querySelector("#marketplace-url");
-const chatHistory = [];
+const concurrencyInput = document.querySelector("#concurrency-input");
+const runButton = document.querySelector("#run-button");
+const runStatus = document.querySelector("#run-status");
+const runReport = document.querySelector("#run-report");
+const callReports = document.querySelector("#call-reports");
 
 function showStatus(message, kind = "") {
-  chatStatus.textContent = message;
-  chatStatus.className = `message ${kind}`.trim();
-}
-
-function appendBubble(role, content, listings = []) {
-  const bubble = document.createElement("article");
-  bubble.className = `chat-bubble ${role}`;
-  bubble.textContent = content;
-
-  if (listings.length > 0) {
-    const list = document.createElement("ul");
-    list.className = "listing-summary";
-    for (const listing of listings.slice(0, 8)) {
-      const item = document.createElement("li");
-      item.textContent = `${listing.name} · ${listing.category} · ${unitsToUsdc(listing.priceUnits)} USDC per call`;
-      list.append(item);
-    }
-    bubble.append(list);
-    if (listings.length > 8) {
-      const more = document.createElement("p");
-      more.className = "connection-help";
-      more.textContent = `And ${listings.length - 8} more listing${listings.length === 9 ? "" : "s"}.`;
-      bubble.append(more);
-    }
-  }
-
-  conversationLog.append(bubble);
-  conversationLog.scrollTop = conversationLog.scrollHeight;
-}
-
-function unitsToUsdc(units) {
-  if (typeof units !== "string" || !/^(0|[1-9][0-9]*)$/.test(units)) return "unknown price";
-  const amount = BigInt(units);
-  const whole = amount / 1000000n;
-  const fraction = String(amount % 1000000n).padStart(6, "0").replace(/0+$/, "");
-  return fraction ? `${whole}.${fraction}` : String(whole);
+  runStatus.textContent = message;
+  runStatus.className = `message ${kind}`.trim();
 }
 
 function parseBudget(value) {
@@ -55,41 +21,100 @@ function parseBudget(value) {
   return units.toString();
 }
 
-function isAllowedLocalHttp(url) {
-  return location.protocol === "http:" &&
-    url.protocol === "http:" &&
-    ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+function unitsToUsdc(units) {
+  if (typeof units !== "string" || !/^(0|[1-9][0-9]*)$/.test(units)) return "unknown";
+  const amount = BigInt(units);
+  const whole = amount / 1000000n;
+  const fraction = String(amount % 1000000n).padStart(6, "0").replace(/0+$/, "");
+  return fraction ? `${whole}.${fraction}` : String(whole);
 }
 
-function getRegistryUrl() {
-  const url = new URL(marketplaceInput.value.trim());
-  if (url.protocol !== "https:" && !isAllowedLocalHttp(url)) {
-    throw new Error("Use HTTPS, or localhost HTTP while running the free local demo.");
+function addText(parent, tagName, className, text) {
+  const element = document.createElement(tagName);
+  if (className) element.className = className;
+  element.textContent = text;
+  parent.append(element);
+  return element;
+}
+
+function statusClass(status) {
+  return `status-${String(status).toLowerCase().replaceAll(" ", "-").replaceAll(",", "")}`;
+}
+
+function makeCallReport(step) {
+  const card = document.createElement("article");
+  card.className = "call-report";
+  const heading = document.createElement("div");
+  heading.className = "call-report-heading";
+  const title = document.createElement("div");
+  addText(title, "h4", "", step.serviceName);
+  addText(title, "p", "connection-help", `${step.stepId} · ${step.task}`);
+  heading.append(title);
+  const status = addText(heading, "span", `status-tag ${statusClass(step.status)}`, step.status);
+  card.append(heading);
+
+  const facts = document.createElement("p");
+  facts.className = "connection-help";
+  const amount = step.status === "completed free"
+    ? "Free test call"
+    : step.status === "settlement unknown"
+      ? "Settlement unverified"
+      : `${unitsToUsdc(step.amountPaidUnits)} USDC`;
+  facts.textContent = `${step.latencyMs} ms · Listed ${unitsToUsdc(step.listedPriceUnits)} USDC · Asked ${unitsToUsdc(step.askedPriceUnits)} USDC · Paid ${amount} · ${step.schemaValid === null ? "Input not sent" : step.schemaValid ? "Output schema valid" : "Output schema invalid"} · ${step.ledgerSaved ? "Saved to Marketplace ledger" : "Not saved to Marketplace ledger"}`;
+  card.append(facts);
+
+  if (step.txHash && step.explorerUrl) {
+    const link = document.createElement("a");
+    link.href = step.explorerUrl;
+    link.target = "_blank";
+    link.rel = "noreferrer";
+    link.textContent = `Transaction ${step.txHash}`;
+    card.append(link);
   }
-  if (url.username || url.password) throw new Error("Do not put credentials in the Marketplace address.");
-  url.search = "";
-  url.hash = "";
-  url.pathname = url.pathname.replace(/\/+$/, "");
-  if (!url.pathname.endsWith("/api/registry")) url.pathname = `${url.pathname}/api/registry`;
-  return url;
+  if (step.reason) addText(card, "p", "message error", step.reason);
+
+  const details = document.createElement("details");
+  addText(details, "summary", "", "Show seller input and output");
+  addText(details, "h5", "", "Input");
+  addText(details, "pre", "call-json", JSON.stringify(step.input, null, 2));
+  if (step.output !== null) {
+    addText(details, "h5", "", "Output");
+    addText(details, "pre", "call-json", JSON.stringify(step.output, null, 2));
+  }
+  card.append(details);
+  return card;
 }
 
-async function askScout(messages) {
-  const response = await fetch("/api/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages }),
-    signal: AbortSignal.timeout(65000)
-  });
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error ?? `Scout request failed (${response.status}).`);
-  return payload;
+function showReport(report) {
+  runReport.hidden = false;
+  document.querySelector("#task-report").textContent = `Task: ${report.task}`;
+  document.querySelector(".budget-report").textContent = `Estimated: ${unitsToUsdc(report.estimatedUnits)} USDC · Spent: ${unitsToUsdc(report.spentUnits)} USDC · Maximum: ${unitsToUsdc(report.budgetUnits)} USDC · Max simultaneous calls: ${report.maxConcurrency}`;
+  document.querySelector("#final-answer").textContent = report.finalAnswer;
+  const resultTag = document.querySelector("#run-result-tag");
+  resultTag.textContent = report.success ? "Completed" : "Partial or failed";
+  resultTag.className = `status-tag ${report.success ? "status-paid" : "status-failed-and-not-charged"}`;
+  callReports.replaceChildren();
+  for (const step of report.steps ?? []) callReports.append(makeCallReport(step));
+  if (report.reason) addText(callReports, "p", "message error", report.reason);
+  runReport.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-document.querySelector("#chat-form").addEventListener("submit", async (event) => {
+async function loadConfig() {
+  try {
+    const response = await fetch("/api/config", { headers: { accept: "application/json" } });
+    const config = await response.json();
+    if (!response.ok) throw new Error(config.error ?? "Buyer configuration is unavailable.");
+    document.querySelector("#marketplace-status").textContent = `Scout will use ${config.marketplaceBaseUrl}. Task limit: ${unitsToUsdc(config.maxBudgetUnits)} USDC.`;
+    document.querySelector("#mode-pill").textContent = config.paidMode ? "Base Sepolia paid mode" : "Local free test mode";
+  } catch (error) {
+    document.querySelector("#marketplace-status").textContent = error.message;
+  }
+}
+
+taskForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const message = chatInput.value.trim();
-  if (!message) return;
+  const task = taskInput.value.trim();
+  if (!task) return;
   let budgetUnits;
   try {
     budgetUnits = parseBudget(budgetInput.value);
@@ -99,99 +124,31 @@ document.querySelector("#chat-form").addEventListener("submit", async (event) =>
     return;
   }
 
-  confirmationCard.hidden = true;
-  appendBubble("user", message);
-  chatInput.value = "";
-  chatInput.disabled = true;
-  document.querySelector("#send-button").disabled = true;
-  showStatus("Scout is thinking…");
-
-  const modelMessage = `${message}\n\nMaximum budget currently set by buyer: ${budgetUnits} atomic USDC units (${budgetInput.value.trim()} USDC).`;
-  const nextMessages = [...chatHistory, { role: "user", content: modelMessage }].slice(-20);
+  runButton.disabled = true;
+  taskInput.disabled = true;
+  budgetInput.disabled = true;
+  concurrencyInput.disabled = true;
+  runReport.hidden = true;
+  showStatus("Scout is checking the Marketplace, planning seller calls, and running the task…");
   try {
-    const result = await askScout(nextMessages);
-    chatHistory.push({ role: "user", content: modelMessage });
-    chatHistory.push({ role: "assistant", content: result.reply });
-    appendBubble("assistant", result.reply);
-    if (result.readyToConfirm && typeof result.proposedTask === "string" && result.proposedTask.trim()) {
-      proposedTaskInput.value = result.proposedTask.trim();
-      document.querySelector("#budget-summary").textContent = `Current maximum budget: ${budgetInput.value.trim()} USDC. You can adjust it before confirming.`;
-      confirmationCard.hidden = false;
-      showStatus("Scout has a draft. Review it below; nothing has been sent to the Marketplace yet.", "success");
-      confirmationCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    } else {
-      showStatus(`Conversation with Scout · ${result.model}`);
-    }
-  } catch (error) {
-    appendBubble("assistant", `I couldn’t reach the conversation service: ${error.message}`);
-    showStatus(error.message, "error");
-  } finally {
-    chatInput.disabled = false;
-    document.querySelector("#send-button").disabled = false;
-    chatInput.focus();
-  }
-});
-
-document.querySelector("#confirm-task").addEventListener("click", async () => {
-  let endpoint;
-  let budgetUnits;
-  const task = proposedTaskInput.value.trim();
-  try {
-    endpoint = getRegistryUrl();
-    budgetUnits = parseBudget(budgetInput.value);
-    if (!task) throw new Error("Review and enter the task summary before confirming.");
-  } catch (error) {
-    showStatus(error.message, "error");
-    return;
-  }
-
-  const button = document.querySelector("#confirm-task");
-  button.disabled = true;
-  showStatus("Task confirmed. Scout is checking the Marketplace registry…");
-  appendBubble("user", `Confirmed task: ${task}\nMaximum budget: ${budgetInput.value.trim()} USDC`);
-
-  const startedAt = performance.now();
-  try {
-    const response = await fetch(endpoint, {
-      headers: { Accept: "application/json" },
-      mode: "cors",
-      credentials: "omit",
-      redirect: "error",
-      signal: AbortSignal.timeout(15000)
+    const response = await fetch("/api/execute", {
+      method: "POST",
+      headers: { accept: "application/json", "content-type": "application/json" },
+      body: JSON.stringify({ task, budgetUnits, maxConcurrency: Number(concurrencyInput.value) }),
+      signal: AbortSignal.timeout(600_000)
     });
-    const finalUrl = new URL(response.url);
-    if (finalUrl.protocol !== "https:" && !isAllowedLocalHttp(finalUrl)) {
-      throw new Error("Marketplace connection did not remain on HTTPS or local test mode.");
-    }
-    const listings = await response.json();
-    if (!response.ok) throw new Error(listings.error ?? `Registry request failed (${response.status}).`);
-    if (!Array.isArray(listings)) throw new Error("Marketplace registry did not return a seller list.");
-
-    const latencyMs = Math.round(performance.now() - startedAt);
-    const connectionType = finalUrl.protocol === "https:" ? "HTTPS" : "local HTTP";
-    appendBubble(
-      "assistant",
-      `Marketplace registry responded over ${connectionType} in ${latencyMs} ms. I found ${listings.length} listing${listings.length === 1 ? "" : "s"}. This stage does not select or call sellers, validate their task output, write a ledger entry, or make a payment. Budget available for later stages: ${budgetUnits} atomic USDC units.`,
-      listings
-    );
-    showStatus(`${connectionType} registry connected · ${latencyMs} ms · no seller call or payment made`, "success");
-    confirmationCard.hidden = true;
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error ?? `Task failed (${response.status}).`);
+    showReport(result);
+    showStatus(result.success ? "Task completed. Review the call report below." : "Scout stopped early. Review completed work and failures below.", result.success ? "success" : "error");
   } catch (error) {
-    appendBubble("assistant", `I couldn’t reach the Marketplace registry: ${error.message}\nNo seller call or payment was made.`);
     showStatus(error.message, "error");
   } finally {
-    button.disabled = false;
+    runButton.disabled = false;
+    taskInput.disabled = false;
+    budgetInput.disabled = false;
+    concurrencyInput.disabled = false;
   }
 });
 
-marketplaceInput.addEventListener("change", () => {
-  try {
-    const endpoint = getRegistryUrl();
-    marketplaceInput.setCustomValidity("");
-    localStorage.setItem("scoutMarketplaceUrl", endpoint.origin);
-  } catch (error) {
-    marketplaceInput.setCustomValidity(error.message);
-  }
-});
-
-marketplaceInput.value = localStorage.getItem("scoutMarketplaceUrl") ?? marketplaceInput.value;
+loadConfig();

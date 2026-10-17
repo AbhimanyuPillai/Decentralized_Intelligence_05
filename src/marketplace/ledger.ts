@@ -5,6 +5,8 @@ const categories: ServiceCategory[] = ["scraping", "data", "inference"];
 const statuses: LedgerRecord["status"][] = [
   "paid",
   "paid, output rejected",
+  "completed free",
+  "settlement unknown",
   "refused",
   "failed and not charged"
 ];
@@ -59,6 +61,12 @@ export function parseLedgerRecord(value: unknown): LedgerRecord {
   if (record.category !== seller.category || record.serviceName !== seller.name) {
     throw new Error("serviceName and category must match the registered seller.");
   }
+  if (record.status === "completed free" && seller.paymentRequired !== false) {
+    throw new Error("completed free is only valid for a listing that does not require payment.");
+  }
+  if (record.status === "settlement unknown" && seller.paymentRequired !== true) {
+    throw new Error("settlement unknown is only valid for a paid listing.");
+  }
 
   let txHash: string | null = null;
   let explorerUrl: string | null = null;
@@ -77,7 +85,7 @@ export function parseLedgerRecord(value: unknown): LedgerRecord {
     txHash = record.txHash;
     explorerUrl = `https://sepolia.basescan.org/tx/${txHash}`;
   } else if (record.amountPaidUnits !== "0" || (record.txHash !== null && record.txHash !== undefined)) {
-    throw new Error("An uncharged call must have amountPaidUnits 0 and no transaction hash.");
+    throw new Error("An uncharged or unverified call must have amountPaidUnits 0 and no transaction hash.");
   }
 
   return {
